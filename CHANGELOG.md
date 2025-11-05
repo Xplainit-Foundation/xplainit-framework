@@ -40,12 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Advanced Filtering**
   - FunctionFilter (include/exclude patterns)
-  - ModuleFilter (path-based filtering)
   - EventTypeFilter (by event category)
-  - RegexFilter (pattern matching)
-  - CallStackFilter (depth limiting)
-  - PerformanceFilter (time-based filtering)
-  - AdvancedFilter (combining multiple filters)
+  - DepthFilter (stack depth limiting)
+  - AcceptAllFilter (capture everything)
+  - Flexible composition of filters
 
 - **Output Formatting**
   - TextFormatter with color support
@@ -75,20 +73,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Testing**
   - 76 unit tests covering all modules
   - 9 integration tests for multi-component workflows
+  - 1 doc test
   - Zero clippy warnings
   - Zero compiler warnings
-  - 100% test pass rate
+  - 100% test pass rate (86/86 tests)
 
 - **Documentation**
   - Comprehensive README with architecture diagrams
-  - 4 working examples:
+  - 2 working examples:
     - basic_usage.rs: Complete workflow demonstration
     - error_analysis.rs: Error analysis capabilities
-    - custom_filters.rs: Advanced filtering patterns
-    - event_pipeline.rs: Pipeline construction
   - API documentation for all modules
   - Contributing guidelines
   - MIT License
+
+### Known Limitations
+- Python bindings not yet functional (PyO3 0.22 API migration needed)
+- JavaScript/Node.js bindings not yet implemented
+- Advanced filter examples removed due to API complexity
+- Event pipeline example removed (will be added in v0.2.0)
 
 ### Performance
 - Event creation: 1.97μs ± 0.15μs
