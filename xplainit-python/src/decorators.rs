@@ -1,13 +1,12 @@
 /// Python decorators for selective tracing
 
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
 
 /// Create an @explain decorator
-pub fn create_explain_decorator(func: &PyAny) -> PyResult<PyObject> {
+pub fn create_explain_decorator(func: &Bound<'_, PyAny>) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         // Create a wrapper function that enables tracing for this specific function
-        let wrapper = py.eval(
+        let wrapper = py.eval_bound(
             r#"
 def xplainit_wrapper(func):
     import functools
@@ -32,9 +31,9 @@ def xplainit_wrapper(func):
 }
 
 /// Create an @explain_errors decorator
-pub fn create_explain_errors_decorator(func: &PyAny) -> PyResult<PyObject> {
+pub fn create_explain_errors_decorator(func: &Bound<'_, PyAny>) -> PyResult<PyObject> {
     Python::with_gil(|py| {
-        let wrapper = py.eval(
+        let wrapper = py.eval_bound(
             r#"
 def xplainit_error_wrapper(func):
     import functools

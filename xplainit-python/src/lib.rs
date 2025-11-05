@@ -2,7 +2,6 @@
 /// Provides sys.settrace() integration for runtime code explanation
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString, PyTuple};
 use xplainit_core::*;
 use std::sync::Arc;
 use parking_lot::RwLock;
@@ -14,12 +13,12 @@ use tracer::PythonTracer;
 
 /// Python module initialization
 #[pymodule]
-fn xplainit(_py: Python, m: &PyModule) -> PyResult<()> {
+fn xplainit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Xplainit>()?;
     m.add_class::<XplainitContext>()?;
-    m.add_function(wrap_pyfunction!(enable, m)?)?;
-    m.add_function(wrap_pyfunction!(disable, m)?)?;
-    m.add_function(wrap_pyfunction!(is_enabled, m)?)?;
+    m.add_function(wrap_pyfunction!(py_enable, m)?)?;
+    m.add_function(wrap_pyfunction!(py_disable, m)?)?;
+    m.add_function(wrap_pyfunction!(py_is_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(explain_function, m)?)?;
     m.add_function(wrap_pyfunction!(get_last_explanation, m)?)?;
     
@@ -130,9 +129,9 @@ impl XplainitContext {
     fn __exit__(
         &mut self,
         py: Python,
-        _exc_type: Option<&PyAny>,
-        _exc_value: Option<&PyAny>,
-        _traceback: Option<&PyAny>,
+        _exc_type: Option<&Bound<'_, PyAny>>,
+        _exc_value: Option<&Bound<'_, PyAny>>,
+        _traceback: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<bool> {
         self.tracer.write().stop(py)?;
         if !self.was_enabled {
@@ -150,7 +149,7 @@ impl XplainitContext {
 
 /// Enable global tracing
 #[pyfunction]
-fn enable(py: Python) -> PyResult<()> {
+fn py_enable(py: Python) -> PyResult<()> {
     let mut global = GLOBAL_INSTANCE.write();
     if global.is_none() {
         let config = create_config("normal", "stdout");
@@ -167,7 +166,7 @@ fn enable(py: Python) -> PyResult<()> {
 
 /// Disable global tracing
 #[pyfunction]
-fn disable(py: Python) -> PyResult<()> {
+fn py_disable(py: Python) -> PyResult<()> {
     if let Some(tracer) = GLOBAL_INSTANCE.write().as_mut() {
         tracer.stop(py)?;
         tracer.disable();
@@ -177,7 +176,7 @@ fn disable(py: Python) -> PyResult<()> {
 
 /// Check if global tracing is enabled
 #[pyfunction]
-fn is_enabled() -> bool {
+fn py_is_enabled() -> bool {
     GLOBAL_INSTANCE
         .read()
         .as_ref()
@@ -187,7 +186,7 @@ fn is_enabled() -> bool {
 
 /// Decorator function to explain a specific function
 #[pyfunction]
-fn explain_function(func: &PyAny) -> PyResult<PyObject> {
+fn explain_function(func: &Bound<'_, PyAny>) -> PyResult<PyObject> {
     decorators::create_explain_decorator(func)
 }
 
