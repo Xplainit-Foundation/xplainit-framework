@@ -1,9 +1,9 @@
 [workspace]
 members = [
     "xplainit-core",
-    "xplainit-python",
-    "xplainit-node",
-    "xplainit-cli",
+    # "xplainit-python",  # Temporarily disabled due to PyO3 0.22 API migration
+    # "xplainit-node",    # Not yet implemented
+    # "xplainit-cli",     # Not yet implemented
 ]
 
 resolver = "2"
