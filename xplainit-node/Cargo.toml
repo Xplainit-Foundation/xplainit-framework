@@ -1,0 +1,16 @@
+[package]
+name = "xplainit-node"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Node.js bindings for Xplainit Framework"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+xplainit-core = { path = "../xplainit-core" }
+neon = { version = "1.0", default-features = false, features = ["napi-6"] }
+serde_json.workspace = true

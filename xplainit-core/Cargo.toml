@@ -1,0 +1,51 @@
+[package]
+name = "xplainit-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core runtime instrumentation engine for Xplainit"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+colored = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam = { workspace = true }
+tokio = { workspace = true, optional = true }
+
+# For storing timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# For unique IDs
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# For efficient string handling
+smartstring = "1.0"
+
+# For global static
+lazy_static = "1.4"
+
+# For AST parsing
+tree-sitter = "0.20"
+
+# For regex filtering
+regex = "1.10"
+
+[dev-dependencies]
+env_logger = { workspace = true }
+criterion = "0.5"
+
+[features]
+default = []
+async = ["tokio"]
+
+[[bench]]
+name = "event_capture"
+harness = false
