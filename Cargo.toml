@@ -3,6 +3,7 @@ members = [
     "xplainit-core",
     "xplainit-python",
     "xplainit-node",
+    "xplainit-c",
     # "xplainit-cli",     # Not yet implemented
 ]
 

@@ -1,0 +1,23 @@
+[package]
+name = "xplainit-c"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C/C++ FFI bindings for Xplainit Framework"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+xplainit-core = { path = "../xplainit-core" }
+serde_json.workspace = true
+
+[build-dependencies]
+cbindgen = "0.27"
+
+[package.metadata.capi.header]
+name = "xplainit"
+subdirectory = false
+generation = true
