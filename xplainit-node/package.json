@@ -1,0 +1,34 @@
+{
+  "name": "xplainit",
+  "version": "0.1.0",
+  "description": "Natural language explanations for JavaScript/Node.js code execution",
+  "main": "index.node",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics",
+    "build-debug": "npm run build --",
+    "build-release": "npm run build -- --release",
+    "install": "npm run build-release",
+    "test": "cargo test"
+  },
+  "keywords": [
+    "xplainit",
+    "debugging",
+    "tracing",
+    "explanation",
+    "code-analysis",
+    "runtime-analysis"
+  ],
+  "author": "Xplainit Contributors",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xplainit/xplainit.git"
+  },
+  "devDependencies": {
+    "cargo-cp-artifact": "^0.1"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  }
+}
