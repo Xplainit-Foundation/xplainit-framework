@@ -1,0 +1,19 @@
+[package]
+name = "xplainit-java"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Java JNI bindings for Xplainit Framework"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+xplainit-core = { path = "../xplainit-core" }
+jni = "0.21"
+serde_json.workspace = true
+
+[package.metadata.jni]
+package = "io.xplainit"
