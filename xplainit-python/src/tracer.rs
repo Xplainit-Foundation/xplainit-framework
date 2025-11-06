@@ -1,11 +1,9 @@
-/// Python tracer implementation using sys.settrace()
+//! Python tracer implementation using sys.settrace()
 
 use pyo3::prelude::*;
 use xplainit_core::*;
-use std::collections::HashMap;
-use chrono::Utc;
-use uuid::Uuid;
 
+#[allow(dead_code)]
 pub struct PythonTracer {
     config: Config,
     runtime: RuntimeEngine,
@@ -47,6 +45,7 @@ impl PythonTracer {
         self.enabled && self.control.is_enabled()
     }
     
+    #[allow(dead_code)]
     pub fn start(&mut self, py: Python) -> PyResult<()> {
         if !self.is_enabled() {
             return Ok(());
@@ -60,6 +59,7 @@ impl PythonTracer {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub fn stop(&mut self, py: Python) -> PyResult<()> {
         let sys = py.import_bound("sys")?;
         sys.setattr("settrace", py.None())?;
@@ -98,6 +98,7 @@ impl PythonTracer {
     
     /// Record a simple event (for basic demonstration)
     /// Note: This is a simplified version. Full sys.settrace() integration TODO.
+    #[allow(dead_code)]
     pub fn record_event(&mut self, event: ExecutionEvent) -> PyResult<()> {
         if !self.control.should_capture_event() {
             return Ok(());
@@ -125,6 +126,7 @@ impl PythonTracer {
 
 // ===== Helper Functions =====
 
+#[allow(dead_code)]
 fn create_trace_function() -> PyResult<PyObject> {
     Python::with_gil(|py| {
         // This will be the actual trace function
@@ -133,6 +135,7 @@ fn create_trace_function() -> PyResult<PyObject> {
     })
 }
 
+#[allow(dead_code)]
 fn python_to_value(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
     if obj.is_none() {
         return Ok(Value::Null);

@@ -187,6 +187,6 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeGetStatistics(
 mod tests {
     #[test]
     fn test_jni_module_compiles() {
-        assert!(true);
+        // This test just ensures the JNI module compiles successfully
     }
 }

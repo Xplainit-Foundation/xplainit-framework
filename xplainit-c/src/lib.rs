@@ -3,7 +3,7 @@
 //! This module provides C-compatible FFI functions for the Xplainit Framework
 //! that can be called from C, C++, or any language with C FFI support.
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 use std::sync::{Arc, Mutex};
@@ -244,12 +244,13 @@ pub unsafe extern "C" fn xplainit_free_string(s: *mut c_char) {
 /// This function is always safe to call
 #[no_mangle]
 pub extern "C" fn xplainit_version() -> *const c_char {
-    "0.1.0\0".as_ptr() as *const c_char
+    c"0.1.0".as_ptr()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CStr;
 
     #[test]
     fn test_create_and_free() {

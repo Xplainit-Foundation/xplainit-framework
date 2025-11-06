@@ -136,6 +136,6 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 mod tests {
     #[test]
     fn test_module_compiles() {
-        assert!(true);
+        // This test just ensures the Neon module compiles successfully
     }
 }

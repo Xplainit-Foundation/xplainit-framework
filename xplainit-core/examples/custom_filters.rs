@@ -1,7 +1,7 @@
-/// Example demonstrating various event filtering strategies
-/// 
-/// This example shows how to use different filters to control
-/// which events are captured and explained.
+//! Example demonstrating various event filtering strategies
+//! 
+//! This example shows how to use different filters to control
+//! which events are captured and explained.
 
 use xplainit_core::*;
 use std::collections::HashMap;

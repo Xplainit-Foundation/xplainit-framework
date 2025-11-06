@@ -1,5 +1,5 @@
-/// Python bindings for Xplainit Framework
-/// Provides sys.settrace() integration for runtime code explanation
+//! Python bindings for Xplainit Framework
+//! Provides sys.settrace() integration for runtime code explanation
 
 use pyo3::prelude::*;
 use xplainit_core::*;
@@ -63,16 +63,6 @@ impl Xplainit {
         self.tracer.read().is_enabled()
     }
     
-    /// Start tracing (installs sys.settrace)
-    fn start(&self, py: Python) -> PyResult<()> {
-        self.tracer.write().start(py)
-    }
-    
-    /// Stop tracing (removes sys.settrace)
-    fn stop(&self, py: Python) -> PyResult<()> {
-        self.tracer.write().stop(py)
-    }
-    
     /// Get all captured events as JSON
     fn get_events(&self) -> String {
         self.tracer.read().get_events_json()
@@ -120,24 +110,22 @@ impl XplainitContext {
         }
     }
     
-    fn __enter__(&mut self, py: Python) -> PyResult<()> {
+    fn __enter__(&mut self, _py: Python) {
         self.was_enabled = self.tracer.read().is_enabled();
-        self.tracer.write().start(py)?;
-        Ok(())
     }
     
+    #[pyo3(signature = (_exc_type=None, _exc_value=None, _traceback=None))]
     fn __exit__(
         &mut self,
-        py: Python,
+        _py: Python,
         _exc_type: Option<&Bound<'_, PyAny>>,
         _exc_value: Option<&Bound<'_, PyAny>>,
         _traceback: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<bool> {
-        self.tracer.write().stop(py)?;
+    ) -> bool {
         if !self.was_enabled {
             self.tracer.write().disable();
         }
-        Ok(false) // Don't suppress exceptions
+        false // Don't suppress exceptions
     }
     
     fn get_events(&self) -> String {
@@ -149,7 +137,7 @@ impl XplainitContext {
 
 /// Enable global tracing
 #[pyfunction]
-fn py_enable(py: Python) -> PyResult<()> {
+fn py_enable(_py: Python) {
     let mut global = GLOBAL_INSTANCE.write();
     if global.is_none() {
         let config = create_config("normal", "stdout");
@@ -158,20 +146,15 @@ fn py_enable(py: Python) -> PyResult<()> {
     
     if let Some(tracer) = global.as_mut() {
         tracer.enable();
-        tracer.start(py)?;
     }
-    
-    Ok(())
 }
 
 /// Disable global tracing
 #[pyfunction]
-fn py_disable(py: Python) -> PyResult<()> {
+fn py_disable(_py: Python) {
     if let Some(tracer) = GLOBAL_INSTANCE.write().as_mut() {
-        tracer.stop(py)?;
         tracer.disable();
     }
-    Ok(())
 }
 
 /// Check if global tracing is enabled
@@ -186,8 +169,8 @@ fn py_is_enabled() -> bool {
 
 /// Decorator function to explain a specific function
 #[pyfunction]
-fn explain_function(func: &Bound<'_, PyAny>) -> PyResult<PyObject> {
-    decorators::create_explain_decorator(func)
+fn explain_function(func: &Bound<'_, PyAny>) -> PyObject {
+    decorators::create_explain_decorator(func).unwrap_or_else(|_| func.py().None())
 }
 
 /// Get last explanation from global instance

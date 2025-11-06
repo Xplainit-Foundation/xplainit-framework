@@ -1,4 +1,4 @@
-/// Python decorators for selective tracing
+//! Python decorators for selective tracing
 
 use pyo3::prelude::*;
 
@@ -31,6 +31,7 @@ def xplainit_wrapper(func):
 }
 
 /// Create an @explain_errors decorator
+#[allow(dead_code)]
 pub fn create_explain_errors_decorator(func: &Bound<'_, PyAny>) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         let wrapper = py.eval_bound(

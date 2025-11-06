@@ -7,6 +7,7 @@ use xplainit_core::*;
 use chrono::Utc;
 use uuid::Uuid;
 use std::collections::HashMap;
+use std::f64::consts::PI;
 
 fn create_test_event(event_type: &str) -> ExecutionEvent {
     let id = Uuid::new_v4();
@@ -35,7 +36,7 @@ fn create_test_event(event_type: &str) -> ExecutionEvent {
             id,
             name: "result".to_string(),
             old_value: Some(Value::Float(0.0)),
-            new_value: Value::Float(3.14159),
+            new_value: Value::Float(PI),
             location,
             timestamp,
         },
