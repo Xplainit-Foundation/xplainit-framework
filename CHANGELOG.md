@@ -8,8 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Java runtime integration (JNI)
-- Go runtime integration (CGO)
 - Rust proc macro integration
 - Advanced natural language explanation templates
 - Property-based testing expansion
@@ -46,6 +44,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - C example (`example.c`)
   - C++ RAII wrapper example (`example.cpp`)
 
+- **Java JNI Bindings (jni 0.21)** ✨
+  - Full Java API with `Xplainit` class and `Statistics` inner class
+  - AutoCloseable implementation for try-with-resources support
+  - JNI native methods: `nativeCreate()`, `nativeFree()`, `nativeEnable()`, `nativeDisable()`, `nativeIsEnabled()`, `nativeGetEvents()`, `nativeClearEvents()`, `nativeGetStatistics()`
+  - Gson integration for JSON parsing (2.10.1)
+  - Maven build configuration (pom.xml) with Java 11 target
+  - exec-maven-plugin for automated Rust library builds
+  - `BasicExample.java` demonstrating try-with-resources pattern
+
+- **Go CGO Bindings** ✨
+  - Complete Go wrapper for C FFI library
+  - `Xplainit` struct with all core methods
+  - `Statistics` struct for runtime metrics
+  - CGO directives for cross-platform library linking (linux, darwin, windows)
+  - Go module support (go.mod) for Go 1.21+
+  - `basic.go` example with defer cleanup pattern
+  - Methods: `New()`, `Close()`, `Enable()`, `Disable()`, `IsEnabled()`, `GetEvents()`, `ClearEvents()`, `GetStatistics()`, `Version()`
+
 ### Added - Filtering System
 - **AcceptAllFilter**: Capture all events
 - **FunctionFilter**: Include/exclude by function name patterns
@@ -73,12 +89,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **event_pipeline.rs**: 4 pipeline demonstrations (simple, multi-processor, multi-sink, production)
 
 ### Added - Testing
-- **93 tests passing** across all packages:
+- **94 tests passing** across all packages:
   - 76 core unit tests
   - 9 integration tests
   - 5 C FFI tests
   - 1 Python test
   - 1 Node.js test
+  - 1 Java test
   - 1 doc test
 - Zero clippy warnings
 - Zero compiler warnings
@@ -105,16 +122,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyO3 0.22 for Python bindings
 - Neon 1.1 for Node.js bindings
 - cbindgen 0.27 for C header generation
+- jni 0.21 for Java JNI bindings
+- CGO for Go bindings (wraps C FFI library)
+- Maven 3.6+ for Java builds
+- Go 1.21+ for Go module support
 - Zero-copy event handling where possible
 - Lock-free data structures for performance
 - Minimal heap allocations in hot paths
 
 ## Release Schedule
 
-- **v0.1.0**: Core framework (Current)
-- **v0.2.0**: Python integration (Planned)
-- **v0.3.0**: JavaScript/Node.js integration (Planned)
-- **v0.4.0**: Additional language bindings (Planned)
+- **v0.1.0**: Core framework + 5 language bindings (Current)
+- **v0.2.0**: Enhanced language integrations (Planned)
+- **v0.3.0**: Additional runtime features (Planned)
+- **v0.4.0**: Advanced analysis capabilities (Planned)
 - **v1.0.0**: Production-ready stable release (Future)
 
 ## Migration Guide

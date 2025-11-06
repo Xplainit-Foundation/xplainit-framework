@@ -5,7 +5,8 @@
 [![CI/CD](https://github.com/xplainit/xplainit/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/xplainit/xplainit/actions)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-brightgreen.svg)](https://github.com/xplainit/xplainit)
-[![Tests](https://img.shields.io/badge/tests-93%20passing-success.svg)](https://github.com/xplainit/xplainit)
+[![Tests](https://img.shields.io/badge/tests-94%20passing-success.svg)](https://github.com/xplainit/xplainit)
+[![Languages](https://img.shields.io/badge/languages-5%20bindings-blue.svg)](https://github.com/xplainit/xplainit)
 
 Xplainit is a production-ready framework that provides **step-by-step explanations of your code execution in plain English**. It works by observing your program at runtime without modifying its behavior.
 
@@ -16,7 +17,7 @@ Xplainit is a production-ready framework that provides **step-by-step explanatio
 - **🔥 Error-Aware**: Explains errors with the same quality as valid code
 - **⚡ Zero Overhead**: When disabled, no performance impact
 - **🎛️ Full Control**: Developers decide when, where, and how explanations appear
-- **🌍 Multi-Language**: Python, JavaScript, C, C++, Java, Go, Rust
+- **🌍 Multi-Language**: Python, JavaScript/Node.js, C, C++, Java, Go, Rust
 - **🚫 Offline**: No AI, ML, APIs, or internet connection required
 
 ## 🎓 Perfect For
@@ -235,9 +236,21 @@ cargo build --release
 xplainit-core = "0.1"
 ```
 
-### Other Languages
+### Java (Maven)
 
-See [installation guide](docs/installation.md) for Java and Go.
+```xml
+<dependency>
+    <groupId>io.xplainit</groupId>
+    <artifactId>xplainit-java</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+### Go (go get)
+
+```bash
+go get github.com/xplainit/xplainit-go
+```
 
 ## 🏗️ Architecture
 
@@ -284,6 +297,8 @@ See [installation guide](docs/installation.md) for Java and Go.
 - [x] **Python integration (PyO3 0.22)** ✨
 - [x] **JavaScript/Node.js integration (Neon 1.1)** ✨
 - [x] **C/C++ FFI bindings (cbindgen)** ✨
+- [x] **Java JNI bindings (jni 0.21)** ✨
+- [x] **Go CGO bindings** ✨
 - [x] Error handling system
 - [x] Output formatting (JSON, Console, Colored)
 - [x] Comprehensive testing (93 tests passing)
