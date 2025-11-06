@@ -8,106 +8,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Python runtime integration (PyO3 bindings)
-- JavaScript/Node.js runtime integration (N-API)
 - Java runtime integration (JNI)
-- C/C++ runtime integration
-- Go runtime integration
-- Property-based testing
+- Go runtime integration (CGO)
+- Rust proc macro integration
+- Advanced natural language explanation templates
+- Property-based testing expansion
 - Code coverage reporting
 - Performance regression tests
+- HTML/Markdown output formats
 
-## [0.1.0] - 2025-11-05
+## [0.1.0] - 2025-11-06
 
-### Added
-- **Core Framework**
-  - Runtime engine with lifecycle management (Idle, Collecting, Paused states)
-  - Event capture system supporting 21 event types (9 normal + 12 error types)
-  - Event storage with circular buffer and configurable capacity
-  - Event pipeline architecture (Filter → Processor → Sink)
+### Added - Core Framework
+- **Runtime Engine** with lifecycle management (Idle, Collecting, Paused states)
+- **21 Event Types** (9 normal + 12 error types) with full serialization support
+- **Event Storage** with circular buffer and configurable capacity
+- **Event Pipeline** architecture (Filter → Processor → Sink)
   
-- **Natural Language Generation**
-  - ExplanationGenerator with 3 verbosity levels (Brief, Normal, Detailed)
-  - Context-aware explanations with variable values and location information
-  - Support for all event types with customized output
+### Added - Language Bindings
+- **Python Integration (PyO3 0.22)** ✨
+  - Full API: `enable()`, `disable()`, `is_enabled()`, `get_events()`, `get_statistics()`, `clear()`
+  - `Xplainit` class for object-oriented usage
+  - Context manager support (`with` statement)
+  - Working `test_bindings.py` example
+  - Package installable with maturin
 
-- **Error Analysis**
-  - ErrorExplainer with root cause analysis
-  - Automatic fix suggestions based on error patterns
-  - Prevention tips and best practices
-  - Learning resources for common errors
-  - Analysis of leading events contributing to errors
+- **JavaScript/Node.js Integration (Neon 1.1)** ✨
+  - Full API: `enable()`, `disable()`, `isEnabled()`, `getEvents()`, `clearEvents()`, `getStatistics()`
+  - TypeScript type definitions (index.d.ts)
+  - npm package support (package.json)
+  - Comprehensive README with examples
 
-- **Advanced Filtering**
-  - FunctionFilter (include/exclude patterns)
-  - EventTypeFilter (by event category)
-  - DepthFilter (stack depth limiting)
-  - AcceptAllFilter (capture everything)
-  - Flexible composition of filters
+- **C/C++ FFI Bindings (cbindgen 0.27)** ✨
+  - C-compatible API: `xplainit_create()`, `xplainit_free()`, `xplainit_enable()`, etc.
+  - Auto-generated header file (`xplainit-c.h`)
+  - Static and dynamic library builds (`cdylib`, `staticlib`)
+  - C example (`example.c`)
+  - C++ RAII wrapper example (`example.cpp`)
 
-- **Output Formatting**
-  - TextFormatter with color support
-  - JsonFormatter with pretty printing
-  - HtmlFormatter with syntax highlighting
-  - StructuredFormatter with custom templates
+### Added - Filtering System
+- **AcceptAllFilter**: Capture all events
+- **FunctionFilter**: Include/exclude by function name patterns
+- **EventTypeFilter**: Filter by event categories (errors only, functions only, etc.)
+- **DepthFilter**: Limit by stack depth
+- **CompositeFilter**: Combine multiple filters with AND/OR logic
 
-- **Pipeline Components**
-  - Processors: PassThrough, Enrichment, Deduplication, RateLimiting
-  - Sinks: Memory, Console, File (with rotation)
-  - Flexible composition and chaining
+### Added - Processing Pipeline
+- **PassThroughProcessor**: No-op for benchmarking
+- **EnrichmentProcessor**: Add metadata to events
+- **DeduplicationProcessor**: Remove duplicate events with LRU cache
+- **RateLimitProcessor**: Limit events per second
+- **ProcessorPipeline**: Chain processors together
 
-- **Control System**
-  - Runtime enable/disable
-  - Performance impact control (<2% overhead)
-  - Event collection pause/resume
-  - Dynamic configuration updates
+### Added - Output Sinks
+- **ConsoleSink**: Output to stdout/stderr (JSON, Text, Colored)
+- **FileSink**: Write to files with rotation support
+- **MemorySink**: Store events in memory with capacity limits
+- **MultiSink**: Fan-out to multiple sinks simultaneously
 
-- **Performance Optimizations**
-  - Event creation: 1.97μs average
-  - Event storage: 1.29μs average
-  - Filtering: <500ns per event
-  - Full pipeline: 1.75μs average
-  - Control check: 782ps overhead
-  - Application overhead: 1-2%
+### Added - Examples
+- **basic_usage.rs**: Complete workflow demonstration
+- **error_analysis.rs**: Error analysis capabilities
+- **custom_filters.rs**: 4 filtering strategies with working examples
+- **event_pipeline.rs**: 4 pipeline demonstrations (simple, multi-processor, multi-sink, production)
 
-- **Testing**
-  - 76 unit tests covering all modules
-  - 9 integration tests for multi-component workflows
+### Added - Testing
+- **93 tests passing** across all packages:
+  - 76 core unit tests
+  - 9 integration tests
+  - 5 C FFI tests
+  - 1 Python test
+  - 1 Node.js test
   - 1 doc test
-  - Zero clippy warnings
-  - Zero compiler warnings
-  - 100% test pass rate (86/86 tests)
+- Zero clippy warnings
+- Zero compiler warnings
+- 100% test pass rate
 
-- **Documentation**
-  - Comprehensive README with architecture diagrams
-  - 2 working examples:
-    - basic_usage.rs: Complete workflow demonstration
-    - error_analysis.rs: Error analysis capabilities
-  - API documentation for all modules
-  - Contributing guidelines
-  - MIT License
-
-### Known Limitations
-- Python bindings not yet functional (PyO3 0.22 API migration needed)
-- JavaScript/Node.js bindings not yet implemented
-- Advanced filter examples removed due to API complexity
-- Event pipeline example removed (will be added in v0.2.0)
+### Added - Documentation
+- Comprehensive README with working examples for all languages
+- Individual READMEs for each language binding
+- API documentation with inline examples
+- Contributing guidelines
+- MIT OR Apache-2.0 dual license
 
 ### Performance
-- Event creation: 1.97μs ± 0.15μs
-- Event storage: 1.29μs ± 0.08μs
-- Filtering: <500ns per event
-- Full pipeline: 1.75μs ± 0.12μs
-- Control overhead: 782ps ± 45ps
-- Throughput: ~571K events/sec (single-threaded)
-- Application overhead: 1-2% typical
+- Event creation: **<2μs** average
+- Event storage: **1.29μs** ± 0.08μs
+- Filtering: **<500ns** per event
+- Full pipeline: **1.75μs** ± 0.12μs
+- Control overhead: **782ps** ± 45ps
+- Throughput: **~571K events/sec** (single-threaded)
+- Application overhead: **1-2%** typical
 
 ### Technical Details
 - Rust 1.91+ required
+- PyO3 0.22 for Python bindings
+- Neon 1.1 for Node.js bindings
+- cbindgen 0.27 for C header generation
 - Zero-copy event handling where possible
 - Lock-free data structures for performance
 - Minimal heap allocations in hot paths
-- Async-ready architecture (not yet enabled)
 
 ## Release Schedule
 
