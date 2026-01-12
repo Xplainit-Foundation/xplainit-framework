@@ -93,7 +93,6 @@ impl Xplainit {
 #[pyclass]
 struct XplainitContext {
     tracer: Arc<RwLock<PythonTracer>>,
-    was_enabled: bool,
 }
 
 #[pymethods]
@@ -106,25 +105,23 @@ impl XplainitContext {
         
         Self {
             tracer: Arc::new(RwLock::new(tracer)),
-            was_enabled: false,
         }
     }
     
-    fn __enter__(&mut self, _py: Python) {
-        self.was_enabled = self.tracer.read().is_enabled();
+    fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        // Simply return self for the context manager protocol
+        slf
     }
     
     #[pyo3(signature = (_exc_type=None, _exc_value=None, _traceback=None))]
     fn __exit__(
-        &mut self,
-        _py: Python,
+        &self,
         _exc_type: Option<&Bound<'_, PyAny>>,
         _exc_value: Option<&Bound<'_, PyAny>>,
         _traceback: Option<&Bound<'_, PyAny>>,
     ) -> bool {
-        if !self.was_enabled {
-            self.tracer.write().disable();
-        }
+        // Disable tracing on exit
+        self.tracer.write().disable();
         false // Don't suppress exceptions
     }
     
