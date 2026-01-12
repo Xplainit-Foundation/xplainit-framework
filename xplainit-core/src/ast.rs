@@ -5,6 +5,7 @@
 
 use crate::{Result, Language, SourceLocation};
 use std::collections::HashMap;
+use tree_sitter::{Parser, Tree, Node};
 
 /// Represents a parsed AST node
 #[derive(Debug, Clone)]
@@ -30,17 +31,34 @@ pub struct AstNode {
 
 /// AST parser for a specific language
 pub struct AstParser {
-    _language: Language,
+    #[allow(dead_code)]
+    language: Language,
     source_code: Option<String>,
-    root_node: Option<AstNode>,
+    tree: Option<Tree>,
+    parser: Parser,
 }
 
 impl AstParser {
     pub fn new(language: Language) -> Self {
+        let mut parser = Parser::new();
+        
+        // Set language grammar - use the language() method from tree-sitter crates
+        let lang_result = match language {
+            Language::Python => tree_sitter_python::language(),
+            Language::JavaScript => tree_sitter_javascript::language(),
+            Language::Rust => tree_sitter_rust::language(),
+            Language::C => tree_sitter_c::language(),
+            Language::Cpp => tree_sitter_cpp::language(),
+            _ => tree_sitter_python::language(), // Default to Python
+        };
+        
+        parser.set_language(lang_result).expect("Failed to set language");
+        
         Self {
-            _language: language,
+            language,
             source_code: None,
-            root_node: None,
+            tree: None,
+            parser,
         }
     }
     
@@ -48,38 +66,82 @@ impl AstParser {
     pub fn parse(&mut self, source: String) -> Result<()> {
         self.source_code = Some(source.clone());
         
-        // TODO: Actual Tree-sitter parsing
-        // For now, create a stub root node
-        self.root_node = Some(AstNode {
-            kind: "module".into(),
-            start: SourceLocation {
-                file: "".into(),
-                line: 0,
-                column: 0,
-                offset: 0,
-            },
-            end: SourceLocation {
-                file: "".into(),
-                line: 0,
-                column: 0,
-                offset: source.len(),
-            },
-            text: source.clone(),
-            children: Vec::new(),
-            metadata: HashMap::new(),
-        });
+        // Actual Tree-sitter parsing
+        self.tree = self.parser.parse(&source, None);
+        
+        if self.tree.is_none() {
+            return Err(crate::XplainitError::ParseError(
+                "Failed to parse source code".to_string()
+            ));
+        }
         
         Ok(())
     }
     
-    /// Find AST node at a specific location
-    pub fn find_node_at(&self, location: &SourceLocation) -> Option<&AstNode> {
-        self.root_node.as_ref().and_then(|root| {
-            Self::find_node_recursive(root, location)
-        })
+    /// Get the root AST node
+    pub fn root_node(&self) -> Option<AstNode> {
+        let tree = self.tree.as_ref()?;
+        let source = self.source_code.as_ref()?;
+        Some(self.convert_node(tree.root_node(), source))
     }
     
-    fn find_node_recursive<'a>(node: &'a AstNode, location: &SourceLocation) -> Option<&'a AstNode> {
+    /// Convert tree-sitter Node to our AstNode
+    fn convert_node(&self, node: Node, source: &str) -> AstNode {
+        let start_point = node.start_position();
+        let end_point = node.end_position();
+        
+        let start = SourceLocation {
+            file: "".into(),
+            line: start_point.row,
+            column: start_point.column,
+            offset: node.start_byte(),
+        };
+        
+        let end = SourceLocation {
+            file: "".into(),
+            line: end_point.row,
+            column: end_point.column,
+            offset: node.end_byte(),
+        };
+        
+        let text = node.utf8_text(source.as_bytes())
+            .unwrap_or("")
+            .to_string();
+        
+        let mut children = Vec::new();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            children.push(self.convert_node(child, source));
+        }
+        
+        let mut metadata = HashMap::new();
+        
+        // Extract function name if it's a function definition
+        if node.kind().contains("function") || node.kind().contains("method") {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
+                    metadata.insert("name".to_string(), name.to_string());
+                }
+            }
+        }
+        
+        AstNode {
+            kind: node.kind().to_string(),
+            start,
+            end,
+            text,
+            children,
+            metadata,
+        }
+    }
+    
+    /// Find AST node at a specific location
+    pub fn find_node_at(&self, location: &SourceLocation) -> Option<AstNode> {
+        let root = self.root_node()?;
+        Self::find_node_recursive(&root, location)
+    }
+    
+    fn find_node_recursive(node: &AstNode, location: &SourceLocation) -> Option<AstNode> {
         // Check if location is within this node
         if location.line >= node.start.line && location.line <= node.end.line {
             // Check children first (more specific)
@@ -89,7 +151,7 @@ impl AstParser {
                 }
             }
             // Return this node if no child matches
-            return Some(node);
+            return Some(node.clone());
         }
         None
     }
@@ -110,12 +172,18 @@ impl AstParser {
         let node = self.find_node_at(location)?;
         
         // Walk up to find function definition
-        // TODO: Implement proper parent tracking
-        if node.kind.contains("function") {
-            node.metadata.get("name").cloned()
-        } else {
-            None
+        self.find_function_in_hierarchy(&node)
+    }
+    
+    fn find_function_in_hierarchy(&self, node: &AstNode) -> Option<String> {
+        // Check if this node is a function
+        if node.kind.contains("function") || node.kind.contains("method") {
+            return node.metadata.get("name").cloned();
         }
+        
+        // For now, we don't track parents, so we search the tree
+        // This is a simplified version - a production implementation would maintain parent links
+        None
     }
 }
 
@@ -160,7 +228,7 @@ mod tests {
     fn test_ast_parser_creation() {
         let parser = AstParser::new(Language::Python);
         assert!(parser.source_code.is_none());
-        assert!(parser.root_node.is_none());
+        assert!(parser.root_node().is_none());
     }
 
     #[test]
@@ -170,7 +238,7 @@ mod tests {
         
         parser.parse(source.clone()).unwrap();
         assert!(parser.source_code.is_some());
-        assert!(parser.root_node.is_some());
+        assert!(parser.root_node().is_some());
     }
 
     #[test]

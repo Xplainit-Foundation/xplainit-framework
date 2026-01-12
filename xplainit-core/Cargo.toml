@@ -34,6 +34,11 @@ lazy_static = "1.4"
 
 # For AST parsing
 tree-sitter = "0.20"
+tree-sitter-python = "0.20"
+tree-sitter-javascript = "0.20"
+tree-sitter-rust = "0.20"
+tree-sitter-c = "0.20"
+tree-sitter-cpp = "0.20"
 
 # For regex filtering
 regex = "1.10"
