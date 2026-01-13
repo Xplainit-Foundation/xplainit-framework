@@ -4,10 +4,12 @@
 //! using Neon (N-API) for native Node.js addon development.
 
 use neon::prelude::*;
-use xplainit_core::{
-    Config, Language, RuntimeEngine, Verbosity, OutputFormat,
-};
+use xplainit_core::*;
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::time::Duration;
+use chrono::Utc;
+use uuid::Uuid;
 
 /// Global runtime instance
 static RUNTIME: Mutex<Option<Arc<Mutex<RuntimeEngine>>>> = Mutex::new(None);
@@ -63,7 +65,7 @@ fn clear_events(mut cx: FunctionContext) -> JsResult<JsBoolean> {
     
     if let Some(runtime) = &*global_runtime {
         let rt = runtime.lock().unwrap();
-        rt.clear_events();
+        rt.event_store().clear();
     }
     
     Ok(cx.boolean(true))
@@ -119,6 +121,101 @@ fn get_statistics(mut cx: FunctionContext) -> JsResult<JsObject> {
     Ok(stats)
 }
 
+/// Record function entry (called from JavaScript tracer)
+fn on_function_enter(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    let function_name = cx.argument::<JsString>(0)?.value(&mut cx);
+    let args_obj = cx.argument::<JsObject>(1)?;
+    let file_path = cx.argument::<JsString>(2)?.value(&mut cx);
+    let line_number = cx.argument::<JsNumber>(3)?.value(&mut cx) as u32;
+    
+    let global_runtime = RUNTIME.lock().unwrap();
+    
+    if let Some(runtime) = &*global_runtime {
+        let rt = runtime.lock().unwrap();
+        
+        // Convert JavaScript object to HashMap
+        let mut args = std::collections::HashMap::new();
+        let keys = args_obj.get_own_property_names(&mut cx)?;
+        let keys_vec = keys.to_vec(&mut cx)?;
+        
+        for key_val in keys_vec {
+            if let Ok(key) = key_val.downcast::<JsString, _>(&mut cx) {
+                let key_str = key.value(&mut cx);
+                let val: Handle<JsValue> = args_obj.get(&mut cx, key_str.as_str())?;
+                let val_str = val.to_string(&mut cx)?.value(&mut cx);
+                args.insert(key_str, xplainit_core::Value::String(val_str));
+            }
+        }
+        
+        // Create FunctionEnter event
+        let event = ExecutionEvent::FunctionEnter {
+            id: Uuid::new_v4(),
+            name: function_name,
+            args,
+            location: SourceLocation::new(file_path, line_number as usize, 0),
+            timestamp: Utc::now(),
+        };
+        
+        rt.event_store().record(event);
+    }
+    
+    Ok(cx.boolean(true))
+}
+
+/// Record function exit (called from JavaScript tracer)
+fn on_function_exit(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    let function_name = cx.argument::<JsString>(0)?.value(&mut cx);
+    let return_value_str = cx.argument::<JsString>(1)?.value(&mut cx);
+    
+    let global_runtime = RUNTIME.lock().unwrap();
+    
+    if let Some(runtime) = &*global_runtime {
+        let rt = runtime.lock().unwrap();
+        
+        // Create FunctionExit event
+        let event = ExecutionEvent::FunctionExit {
+            id: Uuid::new_v4(),
+            name: function_name,
+            return_value: Some(xplainit_core::Value::String(return_value_str)),
+            duration: Duration::from_secs(0),
+            timestamp: Utc::now(),
+        };
+        
+        rt.event_store().record(event);
+    }
+    
+    Ok(cx.boolean(true))
+}
+
+/// Record exception (called from JavaScript tracer)
+fn on_exception(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    let error_type = cx.argument::<JsString>(0)?.value(&mut cx);
+    let error_message = cx.argument::<JsString>(1)?.value(&mut cx);
+    let file_path = cx.argument::<JsString>(2)?.value(&mut cx);
+    let line_number = cx.argument::<JsNumber>(3)?.value(&mut cx) as u32;
+    
+    let global_runtime = RUNTIME.lock().unwrap();
+    
+    if let Some(runtime) = &*global_runtime {
+        let rt = runtime.lock().unwrap();
+        
+        // Create Exception event
+        let event = ExecutionEvent::Exception {
+            id: Uuid::new_v4(),
+            error_type,
+            message: error_message,
+            location: SourceLocation::new(file_path, line_number as usize, 0),
+            stack_trace: vec![],
+            caught: false,
+            timestamp: Utc::now(),
+        };
+        
+        rt.event_store().record(event);
+    }
+    
+    Ok(cx.boolean(true))
+}
+
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
     // Export module-level functions
@@ -128,6 +225,11 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("getEvents", get_events)?;
     cx.export_function("clearEvents", clear_events)?;
     cx.export_function("getStatistics", get_statistics)?;
+    
+    // Export tracer callback functions
+    cx.export_function("onFunctionEnter", on_function_enter)?;
+    cx.export_function("onFunctionExit", on_function_exit)?;
+    cx.export_function("onException", on_exception)?;
     
     Ok(())
 }

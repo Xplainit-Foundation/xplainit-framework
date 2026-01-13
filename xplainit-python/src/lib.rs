@@ -2,8 +2,10 @@
 //! Provides sys.settrace() integration for runtime code explanation
 
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use xplainit_core::*;
 use std::sync::Arc;
+use std::collections::HashMap;
 use parking_lot::RwLock;
 
 mod tracer;
@@ -86,6 +88,75 @@ impl Xplainit {
     /// Get statistics
     fn get_stats(&self) -> String {
         self.tracer.read().get_stats()
+    }
+    
+    // ===== sys.settrace() callback methods =====
+    
+    /// Called when a function is entered (from Python tracer)
+    fn on_function_enter(
+        &self,
+        name: String,
+        args: &Bound<'_, PyDict>,
+        filename: String,
+        line: usize,
+    ) -> PyResult<()> {
+        // Convert Python dict to HashMap<String, Value>
+        let mut rust_args = HashMap::new();
+        for (key, value) in args.iter() {
+            if let Ok(key_str) = key.extract::<String>() {
+                if let Ok(value_str) = value.extract::<String>() {
+                    let val = tracer::parse_python_value(&value_str);
+                    rust_args.insert(key_str, val);
+                }
+            }
+        }
+        
+        self.tracer.write().record_function_enter(
+            name, rust_args, filename, line
+        );
+        Ok(())
+    }
+    
+    /// Called when a function exits (from Python tracer)
+    fn on_function_exit(
+        &self,
+        name: String,
+        return_value: String,
+        filename: String,
+        line: usize,
+    ) -> PyResult<()> {
+        let val = tracer::parse_python_value(&return_value);
+        
+        self.tracer.write().record_function_exit(
+            name, Some(val), filename, line
+        );
+        Ok(())
+    }
+    
+    /// Called when an exception occurs (from Python tracer)
+    fn on_exception(
+        &self,
+        exc_type: String,
+        exc_message: String,
+        filename: String,
+        line: usize,
+    ) -> PyResult<()> {
+        self.tracer.write().record_exception(
+            exc_type, exc_message, filename, line
+        );
+        Ok(())
+    }
+    
+    /// Called when a line is executed (from Python tracer) - optional
+    fn on_line_execute(
+        &self,
+        _filename: String,
+        _line: usize,
+        _locals: &Bound<'_, PyDict>,
+    ) -> PyResult<()> {
+        // For now, we don't record line events (too much overhead)
+        // This can be enabled for debug verbosity level
+        Ok(())
     }
 }
 

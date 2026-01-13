@@ -1,177 +1,225 @@
 //! Python tracer implementation using sys.settrace()
+//! 
+//! Provides the Rust backend for Python's sys.settrace() integration
 
-use pyo3::prelude::*;
 use xplainit_core::*;
+use chrono::Utc;
+use uuid::Uuid;
+use std::collections::HashMap;
 
-#[allow(dead_code)]
 pub struct PythonTracer {
+    engine: RuntimeEngine,
     config: Config,
-    runtime: RuntimeEngine,
-    control: RuntimeControl,
-    explainer: ExplanationGenerator,
     enabled: bool,
-    last_explanation: String,
-    event_count: usize,
 }
 
 impl PythonTracer {
     pub fn new(config: Config, enabled: bool) -> Self {
-        let runtime = RuntimeEngine::new(config.clone());
-        let control = RuntimeControl::new(config.clone());
-        let explainer = ExplanationGenerator::new(VerbosityLevel::Normal);
+        let engine = RuntimeEngine::new(config.clone());
         
         Self {
+            engine,
             config,
-            runtime,
-            control,
-            explainer,
             enabled,
-            last_explanation: String::new(),
-            event_count: 0,
         }
     }
     
     pub fn enable(&mut self) {
         self.enabled = true;
-        self.control.enable();
     }
     
     pub fn disable(&mut self) {
         self.enabled = false;
-        self.control.disable();
     }
     
     pub fn is_enabled(&self) -> bool {
-        self.enabled && self.control.is_enabled()
-    }
-    
-    #[allow(dead_code)]
-    pub fn start(&mut self, py: Python) -> PyResult<()> {
-        if !self.is_enabled() {
-            return Ok(());
-        }
-        
-        // Install trace function
-        let sys = py.import_bound("sys")?;
-        let trace_func = create_trace_function()?;
-        sys.setattr("settrace", trace_func)?;
-        
-        Ok(())
-    }
-    
-    #[allow(dead_code)]
-    pub fn stop(&mut self, py: Python) -> PyResult<()> {
-        let sys = py.import_bound("sys")?;
-        sys.setattr("settrace", py.None())?;
-        Ok(())
+        self.enabled
     }
     
     pub fn clear(&mut self) {
-        self.event_count = 0;
-        self.last_explanation.clear();
+        self.engine.event_store().clear();
     }
     
     pub fn set_verbosity(&mut self, level: &str) {
         let verb = match level.to_lowercase().as_str() {
-            "brief" => VerbosityLevel::Brief,
-            "normal" => VerbosityLevel::Normal,
-            "detailed" => VerbosityLevel::Detailed,
-            "debug" => VerbosityLevel::Debug,
-            _ => VerbosityLevel::Normal,
+            "brief" => Verbosity::Brief,
+            "normal" => Verbosity::Normal,
+            "detailed" => Verbosity::Detailed,
+            "debug" => Verbosity::Debug,
+            _ => Verbosity::Normal,
         };
-        self.explainer = ExplanationGenerator::new(verb);
+        self.config.verbosity = verb;
     }
     
     pub fn get_events_json(&self) -> String {
-        // Get events from runtime engine
-        let events = self.runtime.get_events();
-        serde_json::to_string_pretty(&events).unwrap_or_else(|_| "[]".to_string())
+        let events = self.engine.event_store().snapshot();
+        serde_json::to_string(&events).unwrap_or_else(|_| "[]".to_string())
     }
     
     pub fn get_last_explanation(&self) -> String {
-        self.last_explanation.clone()
+        let events = self.engine.event_store().snapshot();
+        if events.is_empty() {
+            return "No events captured yet".to_string();
+        }
+        
+        let verb_level = match self.config.verbosity {
+            Verbosity::Brief => VerbosityLevel::Brief,
+            Verbosity::Normal => VerbosityLevel::Normal,
+            Verbosity::Detailed => VerbosityLevel::Detailed,
+            Verbosity::Debug => VerbosityLevel::Debug,
+        };
+        let generator = ExplanationGenerator::new(verb_level);
+        events.last()
+            .map(|e| generator.explain(e))
+            .unwrap_or_else(|| "No explanation available".to_string())
     }
     
     pub fn get_stats(&self) -> String {
-        format!("Events captured: {}, Enabled: {}", self.event_count, self.is_enabled())
+        let total = self.engine.event_store().len();
+        format!("Events captured: {}, Enabled: {}", total, self.enabled)
     }
     
-    /// Record a simple event (for basic demonstration)
-    /// Note: This is a simplified version. Full sys.settrace() integration TODO.
-    #[allow(dead_code)]
-    pub fn record_event(&mut self, event: ExecutionEvent) -> PyResult<()> {
-        if !self.control.should_capture_event() {
-            return Ok(());
+    /// Record a function enter event from Python tracer
+    pub fn record_function_enter(
+        &mut self,
+        name: String,
+        args: HashMap<String, Value>,
+        filename: String,
+        line: usize,
+    ) {
+        if !self.enabled {
+            return;
         }
         
-        // TODO: Add event to runtime engine when API is available
-        // For now, just generate explanation directly
+        let event = ExecutionEvent::FunctionEnter {
+            id: Uuid::new_v4(),
+            name,
+            args,
+            location: SourceLocation::new(filename, line, 0),
+            timestamp: Utc::now(),
+        };
         
-        // Generate explanation
-        if self.control.is_explain_enabled() {
-            self.last_explanation = self.explainer.explain(&event);
-            
-            // Print to stdout/stderr based on config
-            if event.is_error() {
-                eprintln!("{}", self.last_explanation);
-            } else {
-                println!("{}", self.last_explanation);
-            }
+        self.engine.event_store().record(event);
+    }
+    
+    /// Record a function exit event from Python tracer
+    pub fn record_function_exit(
+        &mut self,
+        name: String,
+        return_value: Option<Value>,
+        _filename: String,
+        _line: usize,
+    ) {
+        if !self.enabled {
+            return;
         }
         
-        self.event_count += 1;
-        Ok(())
+        let event = ExecutionEvent::FunctionExit {
+            id: Uuid::new_v4(),
+            name,
+            return_value,
+            duration: std::time::Duration::from_micros(0),
+            timestamp: Utc::now(),
+        };
+        
+        self.engine.event_store().record(event);
+    }
+    
+    /// Record an exception event from Python tracer
+    pub fn record_exception(
+        &mut self,
+        exc_type: String,
+        exc_message: String,
+        filename: String,
+        line: usize,
+    ) {
+        if !self.enabled {
+            return;
+        }
+        
+        let event = ExecutionEvent::Exception {
+            id: Uuid::new_v4(),
+            error_type: exc_type,
+            message: exc_message,
+            stack_trace: vec![],
+            location: SourceLocation::new(filename, line, 0),
+            caught: false,
+            timestamp: Utc::now(),
+        };
+        
+        self.engine.event_store().record(event);
     }
 }
 
-// ===== Helper Functions =====
-
-#[allow(dead_code)]
-fn create_trace_function() -> PyResult<PyObject> {
-    Python::with_gil(|py| {
-        // This will be the actual trace function
-        // For now, return a placeholder - full implementation needed
-        Ok(py.None())
-    })
+/// Parse a Python value string into a Value enum
+pub fn parse_python_value(s: &str) -> Value {
+    let trimmed = s.trim();
+    
+    // None
+    if trimmed == "None" {
+        return Value::Null;
+    }
+    
+    // Boolean
+    if trimmed == "True" {
+        return Value::Bool(true);
+    }
+    if trimmed == "False" {
+        return Value::Bool(false);
+    }
+    
+    // Integer
+    if let Ok(i) = trimmed.parse::<i64>() {
+        return Value::Integer(i);
+    }
+    
+    // Float
+    if let Ok(f) = trimmed.parse::<f64>() {
+        return Value::Float(f);
+    }
+    
+    // String (remove quotes if present)
+    let unquoted = if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
+                       (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
+        &trimmed[1..trimmed.len()-1]
+    } else {
+        trimmed
+    };
+    
+    Value::String(unquoted.to_string())
 }
 
-#[allow(dead_code)]
-fn python_to_value(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
-    if obj.is_none() {
-        return Ok(Value::Null);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_parse_python_value() {
+        assert_eq!(parse_python_value("None"), Value::Null);
+        assert_eq!(parse_python_value("True"), Value::Bool(true));
+        assert_eq!(parse_python_value("False"), Value::Bool(false));
+        assert_eq!(parse_python_value("42"), Value::Integer(42));
+        assert_eq!(parse_python_value("3.14"), Value::Float(3.14));
+        assert_eq!(parse_python_value("'hello'"), Value::String("hello".to_string()));
+        assert_eq!(parse_python_value("\"world\""), Value::String("world".to_string()));
     }
     
-    if let Ok(b) = obj.extract::<bool>() {
-        return Ok(Value::Bool(b));
+    #[test]
+    fn test_tracer_creation() {
+        let config = Config::new(Language::Python);
+        let tracer = PythonTracer::new(config, false);
+        assert!(!tracer.is_enabled());
     }
     
-    if let Ok(i) = obj.extract::<i64>() {
-        return Ok(Value::Integer(i));
+    #[test]
+    fn test_tracer_enable_disable() {
+        let config = Config::new(Language::Python);
+        let mut tracer = PythonTracer::new(config, false);
+        
+        assert!(!tracer.is_enabled());
+        tracer.enable();
+        assert!(tracer.is_enabled());
+        tracer.disable();
+        assert!(!tracer.is_enabled());
     }
-    
-    if let Ok(f) = obj.extract::<f64>() {
-        return Ok(Value::Float(f));
-    }
-    
-    if let Ok(s) = obj.extract::<String>() {
-        return Ok(Value::String(s));
-    }
-    
-    if obj.is_callable() {
-        if let Ok(name) = obj.getattr("__name__") {
-            if let Ok(n) = name.extract::<String>() {
-                return Ok(Value::Function(n));
-            }
-        }
-        return Ok(Value::Function("<lambda>".to_string()));
-    }
-    
-    // Default: try to convert to string representation
-    if let Ok(repr) = obj.str() {
-        if let Ok(s) = repr.extract::<String>() {
-            return Ok(Value::Unknown(s));
-        }
-    }
-    
-    Ok(Value::Unknown("<object>".to_string()))
 }
