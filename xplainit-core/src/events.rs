@@ -34,7 +34,7 @@ impl SourceLocation {
 }
 
 /// Runtime value representation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Null,
     Bool(bool),
