@@ -32,8 +32,10 @@ class AutoTracer:
                  trace_returns: bool = True,
                  trace_exceptions: bool = True,
                  trace_lines: bool = False,  # Expensive!
+                 include_modules: Optional[Set[str]] = None,
                  exclude_modules: Optional[Set[str]] = None,
-                 max_depth: int = 100):
+                 max_depth: int = 100,
+                 sampling_rate: float = 1.0):
         """
         Initialize the automatic tracer.
         
@@ -43,16 +45,21 @@ class AutoTracer:
             trace_returns: Trace function returns (default: True)
             trace_exceptions: Trace exceptions (default: True)
             trace_lines: Trace line executions (default: False - expensive!)
+            include_modules: Set of module name patterns to trace (e.g., {'myapp', 'mylib.*'})
+                            If None, traces all user code (excluding stdlib)
             exclude_modules: Set of module names to exclude from tracing
             max_depth: Maximum call depth to trace (prevent stack overflow)
+            sampling_rate: Fraction of calls to trace (0.0 to 1.0, default 1.0 = all)
         """
         self.backend = backend
         self.trace_calls = trace_calls
         self.trace_returns = trace_returns
         self.trace_exceptions = trace_exceptions
         self.trace_lines = trace_lines
+        self.include_modules = include_modules
         self.exclude_modules = exclude_modules or set()
         self.max_depth = max_depth
+        self.sampling_rate = max(0.0, min(1.0, sampling_rate))
         
         # Thread-local storage for recursion depth
         self._thread_local = threading.local()
@@ -60,6 +67,42 @@ class AutoTracer:
         # Track if tracing is active
         self._active = False
         self._previous_trace = None
+        
+        # Performance optimization: Cache module trace decisions
+        # Key: module_name, Value: should_trace (True/False)
+        self._module_cache: Dict[str, bool] = {}
+        self._cache_enabled = True
+        
+        # Performance optimization: Pre-compile stdlib exclusion list
+        self._stdlib_prefixes = frozenset([
+            'sys', 'os', 'io', 'abc', 'codecs', 'encodings',
+            'importlib', 'collections', 'typing', 'functools',
+            'threading', 'weakref', 'contextlib', 'traceback',
+            'tokenize', 'token', 'linecache', 'dis', 'opcode',
+            'builtins', '__main__', 'site', 'pkgutil', 'zipimport',
+            'stat', 'ntpath', 'posixpath', 'genericpath', 'nt',
+            'posix', 'errno', 'pwd', 'grp', 'termios', 'tty',
+            'pty', 'fcntl', 'pipes', 'signal', 'mmap', 'ctypes',
+            'array', 'struct', 'codecs', 'unicodedata', 'string',
+            're', 'difflib', 'textwrap', 'unicodedata', 'stringprep',
+            'readline', 'rlcompleter', 'pickle', 'shelve', 'dbm',
+            'sqlite3', 'json', 'csv', 'configparser', 'netrc',
+            'xdrlib', 'plistlib', 'html', 'xml', 'xmlrpc',
+            'email', 'mailbox', 'mimetypes', 'base64', 'binascii',
+            'quopri', 'uu', 'html', 'xml', 'webbrowser', 'cgi',
+            'cgitb', 'wsgiref', 'urllib', 'http', 'ftplib',
+            'poplib', 'imaplib', 'smtplib', 'smtpd', 'telnetlib',
+            'nntplib', 'socketserver', 'socket', 'ssl', 'select',
+            'selectors', 'asyncio', 'asyncore', 'asynchat', 'signal',
+            'mmap', 'logging', 'getpass', 'platform', 'errno',
+            'ctypes', 'cProfile', 'profile', 'pstats', 'timeit',
+            'trace', 'tracemalloc', 'gc', 'inspect', 'dis',
+            'dataclasses', 'enum', 'graphlib', 'numbers', 'math',
+            'cmath', 'decimal', 'fractions', 'random', 'statistics',
+            'itertools', 'functools', 'operator', 'pathlib', 'fileinput',
+            'filecmp', 'tempfile', 'glob', 'fnmatch', 'shutil',
+            'tarfile', 'zipfile', 'lzma', 'bz2', 'gzip', 'zlib'
+        ])
         
     def start(self):
         """Start automatic tracing by installing sys.settrace() hook."""
@@ -93,39 +136,70 @@ class AutoTracer:
         """
         Determine if we should trace this frame.
         
+        OPTIMIZED: Uses early returns, cached decisions, and frozenset for O(1) lookups.
+        
         Args:
             frame: Python frame object
             
         Returns:
             True if we should trace this frame, False otherwise
         """
-        # Check depth limit
-        if self._get_depth() > self.max_depth:
+        # Quick check: depth limit
+        depth = self._get_depth()
+        if depth > self.max_depth:
             return False
         
         # Get module name
         module_name = frame.f_globals.get('__name__', '')
         
-        # Exclude standard library and third-party modules
-        if module_name in self.exclude_modules:
+        # OPTIMIZATION 0: Check cache first (biggest win)
+        if self._cache_enabled and module_name in self._module_cache:
+            return self._module_cache[module_name]
+        
+        # OPTIMIZATION 1: Exclude xplainit itself (prevent infinite recursion)
+        if 'xplainit' in module_name or 'tracer' in module_name:
+            self._module_cache[module_name] = False
             return False
         
-        # Exclude common standard library modules
-        stdlib_prefixes = [
-            'sys', 'os', 'io', 'abc', 'codecs', 'encodings',
-            'importlib', 'collections', 'typing', 'functools',
-            'threading', 'weakref', 'contextlib', 'traceback',
-            'tokenize', 'token', 'linecache', 'dis', 'opcode'
-        ]
+        # OPTIMIZATION 2: If include_modules is specified, ONLY trace those
+        if self.include_modules is not None:
+            for pattern in self.include_modules:
+                if pattern.endswith('.*'):
+                    # Wildcard pattern (e.g., 'myapp.*')
+                    prefix = pattern[:-2]
+                    if module_name == prefix or module_name.startswith(prefix + '.'):
+                        self._module_cache[module_name] = True
+                        return True
+                else:
+                    # Exact match
+                    if module_name == pattern or module_name.startswith(pattern + '.'):
+                        self._module_cache[module_name] = True
+                        return True
+            # Not in include list
+            self._module_cache[module_name] = False
+            return False
         
-        for prefix in stdlib_prefixes:
-            if module_name.startswith(prefix):
+        # OPTIMIZATION 3: Exclude specific modules
+        if module_name in self.exclude_modules:
+            self._module_cache[module_name] = False
+            return False
+        
+        # OPTIMIZATION 4: Exclude standard library (using frozenset for O(1) lookup)
+        # Check top-level module
+        top_level = module_name.split('.')[0] if module_name else ''
+        if top_level in self._stdlib_prefixes:
+            self._module_cache[module_name] = False
+            return False
+        
+        # OPTIMIZATION 5: Sampling (if enabled)
+        if self.sampling_rate < 1.0:
+            import random
+            if random.random() > self.sampling_rate:
+                # Don't cache sampling decisions (they're random)
                 return False
         
-        # Exclude xplainit's own code to prevent infinite recursion
-        if 'xplainit' in module_name or 'tracer' in module_name:
-            return False
-        
+        # Cache and return True
+        self._module_cache[module_name] = True
         return True
     
     def _trace_callback(self, frame, event: str, arg: Any):
