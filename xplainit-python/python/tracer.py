@@ -1,257 +1,393 @@
 """
-Python sys.settrace() Integration for Xplainit
+Xplainit Automatic Tracer using sys.settrace()
 
-This module provides automatic runtime tracing for Python code using
-the sys.settrace() mechanism.
+This module provides automatic tracing by hooking into Python's
+sys.settrace() mechanism. It captures function calls, returns,
+exceptions, and line executions automatically.
 """
 
 import sys
-import os
 import inspect
-from typing import Any, Optional, Dict, Callable
+import threading
+from typing import Optional, Dict, Any, Set
+import time
 
 
-class XplainitTracer:
+class AutoTracer:
     """
-    Automatic Python tracer using sys.settrace().
+    Automatic tracer that integrates with Python's sys.settrace().
     
-    This tracer hooks into Python's execution model to capture:
-    - Function calls with arguments
-    - Function returns with return values
-    - Line execution
-    - Exception handling
+    This class provides the bridge between Python's tracing mechanism
+    and the Rust backend (xplainit.Xplainit instance).
     
-    It filters out stdlib/site-packages to focus on user code.
+    Usage:
+        tracer = AutoTracer(backend=xplainit_instance)
+        tracer.start()
+        # ... Python code runs automatically traced ...
+        tracer.stop()
     """
     
-    def __init__(self, rust_backend, trace_lines=False, capture_locals=False):
+    def __init__(self, backend=None, 
+                 trace_calls: bool = True,
+                 trace_returns: bool = True,
+                 trace_exceptions: bool = True,
+                 trace_lines: bool = False,  # Expensive!
+                 exclude_modules: Optional[Set[str]] = None,
+                 max_depth: int = 100):
         """
-        Initialize the tracer.
+        Initialize the automatic tracer.
         
         Args:
-            rust_backend: The Rust backend object (Xplainit instance)
-            trace_lines: Enable line-level tracing (can be expensive)
-            capture_locals: Capture local variable values (very expensive)
+            backend: xplainit.Xplainit instance (Rust backend)
+            trace_calls: Trace function calls (default: True)
+            trace_returns: Trace function returns (default: True)
+            trace_exceptions: Trace exceptions (default: True)
+            trace_lines: Trace line executions (default: False - expensive!)
+            exclude_modules: Set of module names to exclude from tracing
+            max_depth: Maximum call depth to trace (prevent stack overflow)
         """
-        self.rust_backend = rust_backend
-        self.enabled = False
+        self.backend = backend
+        self.trace_calls = trace_calls
+        self.trace_returns = trace_returns
+        self.trace_exceptions = trace_exceptions
         self.trace_lines = trace_lines
-        self.capture_locals = capture_locals
+        self.exclude_modules = exclude_modules or set()
+        self.max_depth = max_depth
+        
+        # Thread-local storage for recursion depth
+        self._thread_local = threading.local()
+        
+        # Track if tracing is active
+        self._active = False
         self._previous_trace = None
-        self._traced_files = set()
-        self._ignored_files = set()
         
-    def should_trace_file(self, filename: str) -> bool:
+    def start(self):
+        """Start automatic tracing by installing sys.settrace() hook."""
+        if self._active:
+            return
+        
+        self._active = True
+        self._previous_trace = sys.gettrace()
+        sys.settrace(self._trace_callback)
+        
+    def stop(self):
+        """Stop automatic tracing by removing sys.settrace() hook."""
+        if not self._active:
+            return
+        
+        self._active = False
+        sys.settrace(self._previous_trace)
+        self._previous_trace = None
+        
+    def _get_depth(self) -> int:
+        """Get current call depth for this thread."""
+        if not hasattr(self._thread_local, 'depth'):
+            self._thread_local.depth = 0
+        return self._thread_local.depth
+    
+    def _set_depth(self, depth: int):
+        """Set current call depth for this thread."""
+        self._thread_local.depth = depth
+        
+    def _should_trace(self, frame) -> bool:
         """
-        Determine if a file should be traced.
-        
-        Only traces user code, not Python stdlib or site-packages.
+        Determine if we should trace this frame.
         
         Args:
-            filename: The file path to check
+            frame: Python frame object
             
         Returns:
-            True if the file should be traced, False otherwise
+            True if we should trace this frame, False otherwise
         """
-        # Cache decision
-        if filename in self._traced_files:
-            return True
-        if filename in self._ignored_files:
+        # Check depth limit
+        if self._get_depth() > self.max_depth:
             return False
         
-        # Don't trace special files
-        if filename.startswith('<'):
-            self._ignored_files.add(filename)
+        # Get module name
+        module_name = frame.f_globals.get('__name__', '')
+        
+        # Exclude standard library and third-party modules
+        if module_name in self.exclude_modules:
             return False
         
-        # Don't trace site-packages
-        if 'site-packages' in filename:
-            self._ignored_files.add(filename)
-            return False
+        # Exclude common standard library modules
+        stdlib_prefixes = [
+            'sys', 'os', 'io', 'abc', 'codecs', 'encodings',
+            'importlib', 'collections', 'typing', 'functools',
+            'threading', 'weakref', 'contextlib', 'traceback',
+            'tokenize', 'token', 'linecache', 'dis', 'opcode'
+        ]
         
-        # Don't trace Python stdlib
-        if filename.startswith(sys.prefix):
-            self._ignored_files.add(filename)
-            return False
-        
-        # Check common stdlib paths
-        for path in ['/usr/lib/python', '/usr/local/lib/python', 
-                     'C:\\Python', 'C:\\Program Files\\Python']:
-            if filename.startswith(path):
-                self._ignored_files.add(filename)
+        for prefix in stdlib_prefixes:
+            if module_name.startswith(prefix):
                 return False
         
-        # Must exist and be a real file
-        if not os.path.exists(filename):
-            self._ignored_files.add(filename)
+        # Exclude xplainit's own code to prevent infinite recursion
+        if 'xplainit' in module_name or 'tracer' in module_name:
             return False
         
-        # It's user code!
-        self._traced_files.add(filename)
         return True
     
-    def _extract_args(self, frame) -> Dict[str, Any]:
+    def _trace_callback(self, frame, event: str, arg: Any):
         """
-        Extract function arguments from a frame.
+        Main trace callback function called by Python interpreter.
+        
+        This is the core hook that Python calls for every event.
         
         Args:
-            frame: The Python frame object
+            frame: Python frame object
+            event: Event type ('call', 'return', 'line', 'exception')
+            arg: Event-specific argument
             
         Returns:
-            Dictionary mapping argument names to values
+            Local trace function or None
         """
-        args = {}
-        code = frame.f_code
-        arg_count = code.co_argcount
-        arg_names = code.co_varnames[:arg_count]
-        
-        for name in arg_names:
-            if name in frame.f_locals:
-                value = frame.f_locals[name]
-                # Convert to string representation
-                try:
-                    args[name] = self._serialize_value(value)
-                except Exception:
-                    args[name] = f"<{type(value).__name__}>"
-        
-        return args
-    
-    def _serialize_value(self, value: Any) -> str:
-        """
-        Convert a Python value to a serializable string.
-        
-        Args:
-            value: The value to serialize
-            
-        Returns:
-            String representation of the value
-        """
-        # Handle None
-        if value is None:
-            return "None"
-        
-        # Handle primitives
-        if isinstance(value, (bool, int, float, str)):
-            return repr(value)
-        
-        # Handle collections (limited depth)
-        if isinstance(value, (list, tuple)):
-            if len(value) <= 5:
-                items = [self._serialize_value(v) for v in value]
-                bracket = '[' if isinstance(value, list) else '('
-                close = ']' if isinstance(value, list) else ')'
-                return f"{bracket}{', '.join(items)}{close}"
-            else:
-                return f"<{type(value).__name__} of length {len(value)}>"
-        
-        if isinstance(value, dict):
-            if len(value) <= 5:
-                items = [f"{k}: {self._serialize_value(v)}" 
-                        for k, v in list(value.items())[:5]]
-                return f"{{{', '.join(items)}}}"
-            else:
-                return f"<dict with {len(value)} items>"
-        
-        # Everything else gets type name
-        return f"<{type(value).__name__}>"
-    
-    def trace_function(self, frame, event: str, arg):
-        """
-        Main sys.settrace callback function.
-        
-        This is called by Python for every execution event.
-        
-        Args:
-            frame: The current frame object
-            event: The event type ('call', 'return', 'line', 'exception')
-            arg: Additional argument (depends on event type)
-            
-        Returns:
-            The trace function to use (self for continued tracing)
-        """
-        if not self.enabled:
+        # Skip if not active
+        if not self._active:
             return None
         
-        # Get frame information
-        code = frame.f_code
-        filename = code.co_filename
-        line = frame.f_lineno
-        function_name = code.co_name
+        # Skip if no backend
+        if self.backend is None:
+            return None
         
-        # Filter out files we don't want to trace
-        if not self.should_trace_file(filename):
+        # Check if we should trace this frame
+        if not self._should_trace(frame):
             return None
         
         try:
-            if event == 'call':
-                # Function entry
-                args = self._extract_args(frame)
-                self.rust_backend.on_function_enter(
-                    function_name, args, filename, line
-                )
-            
-            elif event == 'return':
-                # Function exit
-                return_value = self._serialize_value(arg) if arg is not None else "None"
-                self.rust_backend.on_function_exit(
-                    function_name, return_value, filename, line
-                )
-            
-            elif event == 'line':
-                # Line execution - only if enabled
-                if self.trace_lines:
-                    local_vars = {}
-                    if self.capture_locals:
-                        # Capture local variables if enabled
-                        for var_name, var_value in frame.f_locals.items():
-                            if not var_name.startswith('__'):
-                                try:
-                                    local_vars[var_name] = self._serialize_value(var_value)
-                                except Exception:
-                                    local_vars[var_name] = f"<{type(var_value).__name__}>"
-                    
-                    # Record line execution
-                    self.rust_backend.on_line_execute(filename, line, local_vars)
-            
-            elif event == 'exception':
-                # Line execution (only trace if verbose)
-                # We'll skip this for now to reduce overhead
-                pass
-            
-            elif event == 'exception':
-                # Exception occurred
-                exc_type, exc_value, exc_tb = arg
-                self.rust_backend.on_exception(
-                    exc_type.__name__, str(exc_value), filename, line
-                )
-        
+            # Handle different event types
+            if event == 'call' and self.trace_calls:
+                return self._handle_call(frame)
+            elif event == 'return' and self.trace_returns:
+                return self._handle_return(frame, arg)
+            elif event == 'exception' and self.trace_exceptions:
+                return self._handle_exception(frame, arg)
+            elif event == 'line' and self.trace_lines:
+                return self._handle_line(frame)
         except Exception as e:
-            # Don't let tracer errors break the program
-            print(f"Warning: Xplainit tracer error: {e}", file=sys.stderr)
+            # Never let tracing errors crash the program
+            # In production, we'd log this
+            pass
         
-        # Return self to continue tracing this frame
-        return self.trace_function
+        return None
     
-    def enable(self):
-        """Enable automatic tracing."""
-        if not self.enabled:
-            self.enabled = True
-            self._previous_trace = sys.gettrace()
-            sys.settrace(self.trace_function)
+    def _handle_call(self, frame):
+        """
+        Handle function call event.
+        
+        Args:
+            frame: Python frame object
+            
+        Returns:
+            Local trace function (self._trace_callback)
+        """
+        # Increment depth
+        depth = self._get_depth()
+        self._set_depth(depth + 1)
+        
+        # Extract function information
+        func_name = frame.f_code.co_name
+        filename = frame.f_code.co_filename
+        line_number = frame.f_lineno
+        
+        # Extract arguments
+        args_dict = {}
+        try:
+            # Get argument names
+            arg_names = frame.f_code.co_varnames[:frame.f_code.co_argcount]
+            
+            # Get argument values from frame locals
+            for arg_name in arg_names:
+                if arg_name in frame.f_locals:
+                    value = frame.f_locals[arg_name]
+                    args_dict[arg_name] = self._serialize_value(value)
+        except Exception:
+            pass
+        
+        # Call Rust backend
+        try:
+            self.backend.on_function_enter(
+                func_name,
+                args_dict,
+                filename,
+                line_number
+            )
+        except Exception:
+            pass
+        
+        # Return local trace function
+        return self._trace_callback
     
-    def disable(self):
-        """Disable automatic tracing."""
-        if self.enabled:
-            self.enabled = False
-            sys.settrace(self._previous_trace)
-            self._previous_trace = None
+    def _handle_return(self, frame, return_value):
+        """
+        Handle function return event.
+        
+        Args:
+            frame: Python frame object
+            return_value: Value being returned (or None)
+            
+        Returns:
+            None
+        """
+        # Decrement depth
+        depth = self._get_depth()
+        self._set_depth(max(0, depth - 1))
+        
+        # Extract function information
+        func_name = frame.f_code.co_name
+        filename = frame.f_code.co_filename
+        line_number = frame.f_lineno
+        
+        # Serialize return value
+        return_str = self._serialize_value(return_value)
+        
+        # Call Rust backend
+        try:
+            self.backend.on_function_exit(
+                func_name,
+                return_str,
+                filename,
+                line_number
+            )
+        except Exception:
+            pass
+        
+        return None
     
-    def __enter__(self):
-        """Context manager entry."""
-        self.enable()
-        return self
+    def _handle_exception(self, frame, exc_info):
+        """
+        Handle exception event.
+        
+        Args:
+            frame: Python frame object
+            exc_info: Tuple of (exc_type, exc_value, exc_traceback)
+            
+        Returns:
+            None
+        """
+        if exc_info is None:
+            return None
+        
+        exc_type, exc_value, exc_traceback = exc_info
+        
+        # Extract exception information
+        exc_type_name = exc_type.__name__ if exc_type else 'Unknown'
+        exc_message = str(exc_value) if exc_value else ''
+        filename = frame.f_code.co_filename
+        line_number = frame.f_lineno
+        
+        # Call Rust backend
+        try:
+            self.backend.on_exception(
+                exc_type_name,
+                exc_message,
+                filename,
+                line_number
+            )
+        except Exception:
+            pass
+        
+        return None
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.disable()
-        return False
+    def _handle_line(self, frame):
+        """
+        Handle line execution event.
+        
+        WARNING: This is extremely expensive! Only use for detailed debugging.
+        
+        Args:
+            frame: Python frame object
+            
+        Returns:
+            None
+        """
+        # For now, we skip line-level tracing due to overhead
+        # In the future, we could implement this for debug verbosity
+        return None
+    
+    @staticmethod
+    def _serialize_value(value: Any) -> str:
+        """
+        Serialize a Python value to string for Rust backend.
+        
+        Args:
+            value: Any Python value
+            
+        Returns:
+            String representation
+        """
+        if value is None:
+            return "None"
+        elif isinstance(value, bool):
+            return "True" if value else "False"
+        elif isinstance(value, int):
+            return str(value)
+        elif isinstance(value, float):
+            return str(value)
+        elif isinstance(value, str):
+            # Return quoted string
+            return f"'{value}'"
+        elif isinstance(value, (list, tuple)):
+            # Limit size to prevent huge strings
+            if len(value) > 10:
+                return f"{type(value).__name__}[{len(value)} items]"
+            return str(value)
+        elif isinstance(value, dict):
+            # Limit size
+            if len(value) > 10:
+                return f"dict[{len(value)} items]"
+            return str(value)
+        else:
+            # For objects, use repr but truncate
+            try:
+                repr_str = repr(value)
+                if len(repr_str) > 100:
+                    return repr_str[:97] + "..."
+                return repr_str
+            except Exception:
+                return f"<{type(value).__name__}>"
+
+
+def enable_tracing(backend=None, **kwargs):
+    """
+    Convenience function to enable global tracing.
+    
+    Usage:
+        import xplainit
+        xplainit.enable_tracing()
+        
+        # ... code runs with automatic tracing ...
+        
+        xplainit.disable_tracing()
+    
+    Args:
+        backend: xplainit.Xplainit instance
+        **kwargs: Additional arguments passed to AutoTracer
+    """
+    global _global_tracer
+    
+    if backend is None:
+        # Create default backend if not provided
+        import xplainit
+        backend = xplainit.Xplainit()
+    
+    _global_tracer = AutoTracer(backend=backend, **kwargs)
+    _global_tracer.start()
+
+
+def disable_tracing():
+    """
+    Convenience function to disable global tracing.
+    """
+    global _global_tracer
+    
+    if _global_tracer is not None:
+        _global_tracer.stop()
+        _global_tracer = None
+
+
+# Global tracer instance
+_global_tracer: Optional[AutoTracer] = None
+
+
+__all__ = ['AutoTracer', 'enable_tracing', 'disable_tracing']

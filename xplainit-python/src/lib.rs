@@ -18,11 +18,13 @@ use tracer::PythonTracer;
 fn xplainit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Xplainit>()?;
     m.add_class::<XplainitContext>()?;
+    m.add_class::<AutoTracer>()?;
     m.add_function(wrap_pyfunction!(py_enable, m)?)?;
     m.add_function(wrap_pyfunction!(py_disable, m)?)?;
     m.add_function(wrap_pyfunction!(py_is_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(explain_function, m)?)?;
     m.add_function(wrap_pyfunction!(get_last_explanation, m)?)?;
+    m.add_function(wrap_pyfunction!(auto_trace, m)?)?;
     
     Ok(())
 }
@@ -249,6 +251,106 @@ fn get_last_explanation() -> String {
         .as_ref()
         .map(|t| t.get_last_explanation())
         .unwrap_or_else(|| "No explanations available".to_string())
+}
+
+/// Automatic tracer using sys.settrace()
+#[pyclass]
+struct AutoTracer {
+    xplainit: Xplainit,
+    enabled: Arc<RwLock<bool>>,
+}
+
+#[pymethods]
+impl AutoTracer {
+    #[new]
+    #[pyo3(signature = (backend=None))]
+    fn new(backend: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let xplainit = Xplainit::new(true, "normal", "stdout")?;
+        
+        Ok(Self {
+            xplainit,
+            enabled: Arc::new(RwLock::new(false)),
+        })
+    }
+    
+    /// Start automatic tracing
+    fn start(&self) -> PyResult<()> {
+        *self.enabled.write() = true;
+        self.xplainit.enable();
+        // Note: Actual sys.settrace() installation happens in Python code
+        // This just marks the tracer as ready
+        Ok(())
+    }
+    
+    /// Stop automatic tracing
+    fn stop(&self) -> PyResult<()> {
+        *self.enabled.write() = false;
+        self.xplainit.disable();
+        Ok(())
+    }
+    
+    /// Check if tracing is active
+    fn is_active(&self) -> bool {
+        *self.enabled.read()
+    }
+    
+    /// Get captured events
+    fn get_events(&self) -> String {
+        self.xplainit.get_events()
+    }
+    
+    /// Get statistics
+    fn get_stats(&self) -> String {
+        self.xplainit.get_stats()
+    }
+    
+    /// Pass-through callback for function enter
+    fn on_function_enter(
+        &self,
+        name: String,
+        args: &Bound<'_, PyDict>,
+        filename: String,
+        line: usize,
+    ) -> PyResult<()> {
+        self.xplainit.on_function_enter(name, args, filename, line)
+    }
+    
+    /// Pass-through callback for function exit
+    fn on_function_exit(
+        &self,
+        name: String,
+        return_value: String,
+        filename: String,
+        line: usize,
+    ) -> PyResult<()> {
+        self.xplainit.on_function_exit(name, return_value, filename, line)
+    }
+    
+    /// Pass-through callback for exceptions
+    fn on_exception(
+        &self,
+        exc_type: String,
+        exc_message: String,
+        filename: String,
+        line: usize,
+    ) -> PyResult<()> {
+        self.xplainit.on_exception(exc_type, exc_message, filename, line)
+    }
+}
+
+/// Convenience function to start auto-tracing
+#[pyfunction]
+#[pyo3(signature = (backend=None))]
+fn auto_trace(backend: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    // This function will be called from Python
+    // It should import and use the Python AutoTracer class
+    Python::with_gil(|py| {
+        let tracer_module = py.import_bound("xplainit.python.tracer")?;
+        let auto_tracer_class = tracer_module.getattr("AutoTracer")?;
+        let auto_tracer = auto_tracer_class.call1((backend,))?;
+        auto_tracer.call_method0("start")?;
+        Ok(())
+    })
 }
 
 // ===== Helper Functions =====
