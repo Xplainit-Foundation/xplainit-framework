@@ -163,6 +163,10 @@ class AutoTracer:
             return
         
         self._active = True
+        # Reset per-thread accounting for a clean run.
+        self._set_depth(0)
+        if hasattr(self._thread_local, 'recorded_frames'):
+            self._thread_local.recorded_frames.clear()
         self._previous_trace = sys.gettrace()
         sys.settrace(self._trace_callback)
         
@@ -204,24 +208,40 @@ class AutoTracer:
     def _set_depth(self, depth: int):
         """Set current call depth for this thread."""
         self._thread_local.depth = depth
+
+    def _recorded_frames(self) -> set:
+        """
+        Per-thread set of ids of frames whose 'call' we recorded. Used so the
+        matching 'return' is recorded if and only if the 'call' was, keeping
+        FunctionEnter/FunctionExit balanced under sampling and max_depth. The
+        frame's call is still counted toward depth regardless of whether it was
+        recorded, so depth accounting stays balanced.
+        """
+        if not hasattr(self._thread_local, 'recorded_frames'):
+            self._thread_local.recorded_frames = set()
+        return self._thread_local.recorded_frames
         
     def _should_trace(self, frame) -> bool:
         """
-        Determine if we should trace this frame.
-        
-        OPTIMIZED: Uses early returns, cached decisions, and frozenset for O(1) lookups.
-        
+        Determine whether this frame is user code we care about, based purely
+        on the frame's identity (source file / module / include / exclude /
+        sampling). This deliberately does NOT consult call depth.
+
+        Depth is handled separately in ``_trace_callback`` so that the 'return'
+        event for a frame whose 'call' was counted always decrements the depth
+        exactly once. Gating this method on ``max_depth`` (as an earlier version
+        did) caused a serious bug: once depth exceeded ``max_depth`` the matching
+        'return' events were filtered out too, their depth decrement never ran,
+        and depth ratcheted upward - permanently wedging tracing off for the
+        thread. See test_depth_accounting.py for the regression.
+
         Args:
             frame: Python frame object
-            
-        Returns:
-            True if we should trace this frame, False otherwise
-        """
-        # Quick check: depth limit
-        depth = self._get_depth()
-        if depth > self.max_depth:
-            return False
 
+        Returns:
+            True if this frame is user code that should be considered for
+            tracing, False otherwise.
+        """
         # Get module name and source filename for this frame.
         module_name = frame.f_globals.get('__name__', '')
         filename = frame.f_code.co_filename
@@ -279,13 +299,11 @@ class AutoTracer:
             if not is_user_code:
                 return False
 
-        # OPTIMIZATION 5: Sampling (if enabled). Decisions are random so they
-        # are never cached.
-        if self.sampling_rate < 1.0:
-            import random
-            if random.random() > self.sampling_rate:
-                return False
-
+        # NOTE: sampling is intentionally NOT applied here. Applying a random
+        # decision in _should_trace would give different answers for the 'call'
+        # and 'return' of the same frame, unbalancing depth accounting. Sampling
+        # is applied once, per counted call frame, in _handle_call and the same
+        # decision is honored on the matching return.
         return True
 
     def _is_stdlib_file(self, filename: str, module_name: str) -> bool:
@@ -342,26 +360,37 @@ class AutoTracer:
         # Skip if no backend
         if self.backend is None:
             return None
-        
-        # Check if we should trace this frame
+
+        # Frame-identity filter (file / module / self / include / exclude /
+        # sampling). This intentionally does NOT look at depth - see
+        # _should_trace. Frames that fail this filter (stdlib, the tracer
+        # itself, excluded modules) are never counted toward depth and never
+        # recorded, for either call or return events.
         if not self._should_trace(frame):
             return None
-        
+
         try:
-            # Handle different event types
-            if event == 'call' and self.trace_calls:
+            # Handle different event types.
+            #
+            # DEPTH ACCOUNTING: 'call' increments depth, 'return' decrements it.
+            # We must keep these balanced so depth cannot ratchet upward and
+            # wedge tracing off. For generators/coroutines, sys.settrace emits
+            # additional 'call'/'return' pairs on each resume/suspend (yield /
+            # await); those are balanced pairs too, so the accounting stays
+            # correct across yields.
+            if event == 'call':
                 return self._handle_call(frame)
-            elif event == 'return' and self.trace_returns:
+            elif event == 'return':
                 return self._handle_return(frame, arg)
             elif event == 'exception' and self.trace_exceptions:
                 return self._handle_exception(frame, arg)
             elif event == 'line' and self.trace_lines:
                 return self._handle_line(frame)
-        except Exception as e:
-            # Never let tracing errors crash the program
-            # In production, we'd log this
+        except Exception:
+            # Never let tracing errors crash the program.
+            # In production, we'd log this.
             pass
-        
+
         return None
     
     def _handle_call(self, frame):
@@ -374,41 +403,59 @@ class AutoTracer:
         Returns:
             Local trace function (self._trace_callback)
         """
-        # Increment depth
-        depth = self._get_depth()
-        self._set_depth(depth + 1)
-        
-        # Extract function information
-        func_name = frame.f_code.co_name
-        filename = frame.f_code.co_filename
-        line_number = frame.f_lineno
-        
-        # Extract arguments
-        args_dict = {}
-        try:
-            # Get argument names
-            arg_names = frame.f_code.co_varnames[:frame.f_code.co_argcount]
-            
-            # Get argument values from frame locals
-            for arg_name in arg_names:
-                if arg_name in frame.f_locals:
-                    value = frame.f_locals[arg_name]
-                    args_dict[arg_name] = self._serialize_value(value)
-        except Exception:
-            pass
-        
-        # Call Rust backend
-        try:
-            self.backend.on_function_enter(
-                func_name,
-                args_dict,
-                filename,
-                line_number
-            )
-        except Exception:
-            pass
-        
-        # Return local trace function
+        # Increment depth for this counted (user-code) frame. Depth is
+        # maintained unconditionally here so the matching return can always
+        # decrement it - regardless of whether we RECORD this call. This is the
+        # heart of the depth-accounting fix.
+        depth = self._get_depth() + 1
+        self._set_depth(depth)
+
+        # Decide whether to RECORD this call. Two gates, both recording-only
+        # (they never affect depth):
+        #   1. max_depth: skip recording once we are deeper than max_depth.
+        #   2. sampling: skip recording for a random fraction of calls.
+        # The decision is remembered per-frame so the matching return honors it.
+        record = self.trace_calls and depth <= self.max_depth
+        if record and self.sampling_rate < 1.0:
+            import random
+            if random.random() > self.sampling_rate:
+                record = False
+
+        if record:
+            # Remember that this frame's call was recorded, so its return is
+            # recorded too (balanced enter/exit).
+            self._recorded_frames().add(id(frame))
+
+            # Extract function information
+            func_name = frame.f_code.co_name
+            filename = frame.f_code.co_filename
+            line_number = frame.f_lineno
+
+            # Extract arguments (actual values, not just names)
+            args_dict = {}
+            try:
+                arg_names = frame.f_code.co_varnames[:frame.f_code.co_argcount]
+                for arg_name in arg_names:
+                    if arg_name in frame.f_locals:
+                        value = frame.f_locals[arg_name]
+                        args_dict[arg_name] = self._serialize_value(value)
+            except Exception:
+                pass
+
+            # Call Rust backend
+            try:
+                self.backend.on_function_enter(
+                    func_name,
+                    args_dict,
+                    filename,
+                    line_number
+                )
+            except Exception:
+                pass
+
+        # Return local trace function so we keep receiving events (return,
+        # line, exception) for this frame - even when we chose not to record
+        # the call, so we still see the matching return and keep depth balanced.
         return self._trace_callback
     
     def _handle_return(self, frame, return_value):
@@ -422,29 +469,40 @@ class AutoTracer:
         Returns:
             None
         """
-        # Decrement depth
+        # Decrement depth for this counted (user-code) frame. Done
+        # unconditionally so a counted call is always balanced by its return,
+        # even if we did not record either side (max_depth / sampling).
         depth = self._get_depth()
         self._set_depth(max(0, depth - 1))
-        
-        # Extract function information
-        func_name = frame.f_code.co_name
-        filename = frame.f_code.co_filename
-        line_number = frame.f_lineno
-        
-        # Serialize return value
-        return_str = self._serialize_value(return_value)
-        
-        # Call Rust backend
-        try:
-            self.backend.on_function_exit(
-                func_name,
-                return_str,
-                filename,
-                line_number
-            )
-        except Exception:
-            pass
-        
+
+        # Record the exit if and only if we recorded the matching call. This
+        # keeps FunctionEnter/FunctionExit balanced under max_depth and
+        # sampling. The frame-id entry is popped so the set does not grow.
+        recorded_frames = self._recorded_frames()
+        frame_id = id(frame)
+        should_record = frame_id in recorded_frames
+        recorded_frames.discard(frame_id)
+
+        if should_record and self.trace_returns:
+            # Extract function information
+            func_name = frame.f_code.co_name
+            filename = frame.f_code.co_filename
+            line_number = frame.f_lineno
+
+            # Serialize return value (actual value, not just a name)
+            return_str = self._serialize_value(return_value)
+
+            # Call Rust backend
+            try:
+                self.backend.on_function_exit(
+                    func_name,
+                    return_str,
+                    filename,
+                    line_number
+                )
+            except Exception:
+                pass
+
         return None
     
     def _handle_exception(self, frame, exc_info):
