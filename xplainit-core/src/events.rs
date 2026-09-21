@@ -565,6 +565,33 @@ impl ExecutionEvent {
                     redact_named_map(&mut frame.arguments, patterns);
                 }
             }
+            // Single-value payload fields carry no key of their own, so they
+            // are not blanket-redacted; but if the value is (or contains) an
+            // object/array with secret-like keys, those inner secrets must
+            // still be scrubbed for consistency with the named-map paths above.
+            // Without this, a secret nested inside a return value / resumed
+            // value / loop variable would leak.
+            ExecutionEvent::FunctionExit {
+                return_value: Some(v),
+                ..
+            }
+            | ExecutionEvent::Return { value: Some(v), .. }
+            | ExecutionEvent::AsyncTaskResume {
+                resumed_with: Some(v),
+                ..
+            }
+            | ExecutionEvent::LoopIteration {
+                loop_var_value: Some(v),
+                ..
+            } => {
+                *v = v.redacted_nested(patterns);
+            }
+            ExecutionEvent::TypeError { value, .. } => {
+                *value = value.redacted_nested(patterns);
+            }
+            ExecutionEvent::DivisionByZero { numerator, .. } => {
+                *numerator = numerator.redacted_nested(patterns);
+            }
             _ => {}
         }
         event
@@ -686,6 +713,66 @@ mod tests {
         assert_eq!(event.location().file, "worker.rs");
         assert_eq!(event.location().line, 21);
         assert!(!event.is_error());
+    }
+
+    #[test]
+    fn test_redacts_secret_nested_in_return_value() {
+        // A secret nested inside a FunctionExit return value must be scrubbed.
+        // Fails if the single-value payload redaction arm is reverted.
+        let patterns: Vec<String> = crate::security::DEFAULT_REDACTION_PATTERNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let mut inner = HashMap::new();
+        inner.insert(
+            "authorization".to_string(),
+            Value::String("Bearer leak-me".to_string()),
+        );
+        inner.insert("public".to_string(), Value::Integer(1));
+        let event = ExecutionEvent::FunctionExit {
+            id: Uuid::new_v4(),
+            name: "f".to_string(),
+            return_value: Some(Value::Object(inner)),
+            duration: Duration::from_millis(1),
+            timestamp: Utc::now(),
+        };
+
+        let redacted = event.redacted(&patterns);
+        let json = serde_json::to_string(&redacted).expect("serialize");
+        assert!(
+            !json.contains("leak-me"),
+            "secret in return value leaked: {json}"
+        );
+        assert!(json.contains(crate::security::REDACTED_PLACEHOLDER));
+        assert!(json.contains("\"public\""), "non-secret field lost: {json}");
+    }
+
+    #[test]
+    fn test_redacts_secret_nested_in_loop_var_value() {
+        // Secret nested in a LoopIteration loop-variable value must be scrubbed.
+        let patterns: Vec<String> = crate::security::DEFAULT_REDACTION_PATTERNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut inner = HashMap::new();
+        inner.insert(
+            "api_key".to_string(),
+            Value::String("sk-secret".to_string()),
+        );
+        let event = ExecutionEvent::LoopIteration {
+            id: Uuid::new_v4(),
+            loop_type: "for".to_string(),
+            iteration: 1,
+            loop_var: Some("item".to_string()),
+            loop_var_value: Some(Value::Object(inner)),
+            timestamp: Utc::now(),
+        };
+        let json = serde_json::to_string(&event.redacted(&patterns)).unwrap();
+        assert!(
+            !json.contains("sk-secret"),
+            "loop var secret leaked: {json}"
+        );
     }
 
     #[test]

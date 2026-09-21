@@ -126,3 +126,122 @@ fn run_on_source_reports_not_wired() {
     assert!(stdout.contains("not wired"));
     fs::remove_dir_all(&dir).ok();
 }
+
+// ===== FEAT-004: additional realistic end-to-end CLI flows =====
+
+/// A trace whose FunctionEnter carries a secret-like `password` argument. Used
+/// to prove the CLI redacts secrets before rendering (see report command).
+const SECRET_TRACE: &str = r#"[
+  {
+    "FunctionEnter": {
+      "id": "550e8400-e29b-41d4-a716-4466554400aa",
+      "name": "login",
+      "args": {"password": {"String": "hunter2super"}},
+      "location": {"file": "auth.py", "line": 3, "column": 1, "offset": 0},
+      "timestamp": "2024-01-01T00:00:00Z"
+    }
+  }
+]"#;
+
+fn write_named(dir: &Path, name: &str, contents: &str) -> PathBuf {
+    let path = dir.join(name);
+    fs::write(&path, contents).expect("write fixture");
+    path
+}
+
+#[test]
+fn report_text_renders_events() {
+    // Realistic flow: load trace JSON -> render as text -> assert the human
+    // explanation mentions the function. Fails if the report/text formatter
+    // path is broken.
+    let dir = temp_dir("report-text");
+    let trace = write_trace(&dir);
+    let out = run(&["report", "--format", "text", trace.to_str().unwrap()]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("divide"),
+        "text report missing function name"
+    );
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn report_markdown_is_document() {
+    let dir = temp_dir("report-md");
+    let trace = write_trace(&dir);
+    let out = run(&["report", "--format", "markdown", trace.to_str().unwrap()]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("# Xplainit Execution Trace"));
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn report_secret_argument_is_redacted() {
+    // End-to-end: a secret-valued argument must NOT appear in rendered output;
+    // the redaction placeholder must appear instead. Fails if the CLI stops
+    // redacting before it renders.
+    let dir = temp_dir("report-secret");
+    let trace = write_named(&dir, "secret.json", SECRET_TRACE);
+    let out = run(&["report", "--format", "json", trace.to_str().unwrap()]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("hunter2super"),
+        "secret value leaked in report output: {stdout}"
+    );
+    assert!(
+        stdout.contains("<redacted>"),
+        "redaction placeholder missing from report output: {stdout}"
+    );
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn report_unknown_format_fails() {
+    let dir = temp_dir("report-bad-fmt");
+    let trace = write_trace(&dir);
+    let out = run(&["report", "--format", "bogus", trace.to_str().unwrap()]);
+    assert!(!out.status.success(), "unknown format must be an error");
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn analyze_clean_trace_reports_no_errors() {
+    // A trace with only a normal event must report zero errors.
+    let dir = temp_dir("analyze-clean");
+    let clean = r#"[
+      {"FunctionEnter": {
+        "id": "550e8400-e29b-41d4-a716-4466554400bb",
+        "name": "ok", "args": {},
+        "location": {"file": "app.py", "line": 1, "column": 0, "offset": 0},
+        "timestamp": "2024-01-01T00:00:00Z"}}
+    ]"#;
+    let trace = write_named(&dir, "clean.json", clean);
+    let out = run(&["analyze", trace.to_str().unwrap()]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("found 0 error(s)") || stdout.to_lowercase().contains("no error"),
+        "clean analyze output unexpected: {stdout}"
+    );
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn report_malformed_json_fails_gracefully() {
+    // A malformed trace file must fail with a non-zero exit, not panic.
+    let dir = temp_dir("report-malformed");
+    let trace = write_named(&dir, "bad.json", "{ this is not valid json ]");
+    let out = run(&["report", "--format", "json", trace.to_str().unwrap()]);
+    assert!(!out.status.success(), "malformed JSON must fail");
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn analyze_empty_path_is_rejected() {
+    // An empty path argument must be rejected by input validation.
+    let out = run(&["analyze", ""]);
+    assert!(!out.status.success());
+}
