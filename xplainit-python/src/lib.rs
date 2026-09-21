@@ -92,6 +92,18 @@ impl Xplainit {
         self.tracer.read().get_stats()
     }
     
+    /// Get explanations for all captured events
+    fn get_explanations(&self, verbosity: Option<&str>) -> String {
+        self.tracer.read().get_explanations(verbosity)
+    }
+    
+    /// Print explanations in real-time to console
+    fn print_explanations(&self, verbosity: Option<&str>) {
+        let verb = verbosity.unwrap_or("normal");
+        let explanations = self.tracer.read().get_explanations(Some(verb));
+        println!("{}", explanations);
+    }
+    
     // ===== sys.settrace() callback methods =====
     
     /// Called when a function is entered (from Python tracer)

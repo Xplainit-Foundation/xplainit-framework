@@ -79,6 +79,32 @@ impl PythonTracer {
         format!("Events captured: {}, Enabled: {}", total, self.enabled)
     }
     
+    /// Get natural language explanations for all captured events
+    pub fn get_explanations(&self, verbosity: Option<&str>) -> String {
+        let events = self.engine.event_store().snapshot();
+        if events.is_empty() {
+            return "No events captured yet".to_string();
+        }
+        
+        // Determine verbosity level
+        let verb_level = match verbosity.unwrap_or("normal").to_lowercase().as_str() {
+            "brief" => VerbosityLevel::Brief,
+            "detailed" => VerbosityLevel::Detailed,
+            "debug" => VerbosityLevel::Debug,
+            _ => VerbosityLevel::Normal,
+        };
+        
+        let generator = ExplanationGenerator::new(verb_level);
+        
+        // Generate explanations for all events
+        let explanations: Vec<String> = events
+            .iter()
+            .map(|e| generator.explain(e))
+            .collect();
+        
+        explanations.join("\n")
+    }
+    
     /// Record a function enter event from Python tracer
     pub fn record_function_enter(
         &mut self,

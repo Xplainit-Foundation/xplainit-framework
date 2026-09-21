@@ -71,3 +71,4 @@ Thumbs.db
 
 # Documentation build
 /target/doc/
+.venv/
