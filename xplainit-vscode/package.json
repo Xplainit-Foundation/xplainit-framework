@@ -1,0 +1,128 @@
+{
+  "name": "xplainit-vscode",
+  "displayName": "Xplainit",
+  "description": "Inline hover explanations, step-through visualization, error analysis, and trace record/playback for Xplainit execution traces.",
+  "version": "0.1.0",
+  "publisher": "xplainit",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Xplainit-Foundation/xplainit-framework.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "xplainit",
+    "trace",
+    "explain",
+    "debugging",
+    "execution"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:xplainit-trace",
+    "workspaceContains:**/*.xplainit-trace"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "xplainit.loadTrace",
+        "title": "Xplainit: Load Trace File",
+        "category": "Xplainit"
+      },
+      {
+        "command": "xplainit.recordTrace",
+        "title": "Xplainit: Record Trace",
+        "category": "Xplainit"
+      },
+      {
+        "command": "xplainit.playbackTrace",
+        "title": "Xplainit: Playback Trace",
+        "category": "Xplainit"
+      },
+      {
+        "command": "xplainit.stepForward",
+        "title": "Xplainit: Step Forward",
+        "category": "Xplainit"
+      },
+      {
+        "command": "xplainit.stepBackward",
+        "title": "Xplainit: Step Backward",
+        "category": "Xplainit"
+      },
+      {
+        "command": "xplainit.stopPlayback",
+        "title": "Xplainit: Stop Playback",
+        "category": "Xplainit"
+      },
+      {
+        "command": "xplainit.explainFunction",
+        "title": "Xplainit: Explain Function at Cursor",
+        "category": "Xplainit"
+      },
+      {
+        "command": "xplainit.showErrorPanel",
+        "title": "Xplainit: Show Error Analysis Panel",
+        "category": "Xplainit"
+      }
+    ],
+    "configuration": {
+      "title": "Xplainit",
+      "properties": {
+        "xplainit.cliPath": {
+          "type": "string",
+          "default": "xplainit",
+          "description": "Path to the xplainit CLI binary used for record, analyze, and report."
+        },
+        "xplainit.recordCommand": {
+          "type": "string",
+          "default": "run",
+          "description": "The xplainit CLI subcommand used to record a trace (see FEAT-001 CLI)."
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "xplainitTimeline",
+          "name": "Xplainit Timeline"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "xplainit-trace",
+        "aliases": [
+          "Xplainit Trace"
+        ],
+        "extensions": [
+          ".xplainit-trace"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "xplainit-trace",
+        "scopeName": "source.xplainit-trace",
+        "path": "./syntaxes/xplainit-trace.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

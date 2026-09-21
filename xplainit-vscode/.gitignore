@@ -1,0 +1,9 @@
+node_modules/
+out/
+*.vsix
+*.tsbuildinfo
+
+# The repo-root .gitignore ignores all .vscode/ directories; keep the
+# extension's own launch configuration tracked so F5 works out of the box.
+!.vscode/
+!.vscode/launch.json

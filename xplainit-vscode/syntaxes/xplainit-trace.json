@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Xplainit Trace",
+  "scopeName": "source.xplainit-trace",
+  "patterns": [
+    { "include": "#value" }
+  ],
+  "repository": {
+    "value": {
+      "patterns": [
+        { "include": "#constant" },
+        { "include": "#number" },
+        { "include": "#string" },
+        { "include": "#event-variant" },
+        { "include": "#property" },
+        { "include": "#punctuation" }
+      ]
+    },
+    "constant": {
+      "match": "\\b(true|false|null)\\b",
+      "name": "constant.language.xplainit-trace"
+    },
+    "number": {
+      "match": "-?\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+      "name": "constant.numeric.xplainit-trace"
+    },
+    "string": {
+      "name": "string.quoted.double.xplainit-trace",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "match": "\\\\(?:[\"\\\\/bfnrt]|u[0-9a-fA-F]{4})",
+          "name": "constant.character.escape.xplainit-trace"
+        }
+      ]
+    },
+    "event-variant": {
+      "match": "\"(FunctionEnter|FunctionExit|VariableDeclaration|VariableAssign|ConditionalEval|LoopEntry|LoopIteration|LoopExit|Return|Exception|SyntaxError|RuntimeError|TypeError|NullPointerError|IndexOutOfBounds|DivisionByZero|StackOverflow|Panic|InfiniteLoopDetected|DeadlockDetected|MemoryLeakDetected)\"\\s*:",
+      "name": "keyword.control.event.xplainit-trace"
+    },
+    "property": {
+      "match": "\"(id|name|args|location|file|line|column|offset|timestamp|return_value|duration|value|old_value|new_value|var_type|is_const|condition|result|branch_taken|loop_type|iteration|reason|error_type|message|stack_trace|caught|error|expected|got|operation|variable|index|size|collection|numerator|denominator_var|function|recursion_depth|iterations|threads)\"\\s*:",
+      "name": "support.type.property-name.xplainit-trace"
+    },
+    "punctuation": {
+      "match": "[{}\\[\\],:]",
+      "name": "punctuation.definition.xplainit-trace"
+    }
+  }
+}
