@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-004",
+  "type": "fix",
+  "description": "Complete Phase 1 Task 1.3 (AST integration). The doc claims ast.rs is a stub, but tree-sitter parsing, find_node_at, and get_context already work. The genuine functional gap is get_containing_function, which always returns None because AstNode has no parent tracking and find_function_in_hierarchy never walks upward. Fix get_containing_function so it correctly returns the name of the function/method enclosing a given SourceLocation, for all supported grammars (python, javascript, rust, c, cpp). Add tests that would fail against the current broken behaviour. This is independent of the Python-binding features (FEAT-002/003) and touches only xplainit-core.",
+  "status": "pending",
+  "steps": [
+    "In xplainit-core/src/ast.rs, implement get_containing_function so it actually finds the innermost enclosing function/method for a location. Recommended approach: walk the tree-sitter tree directly (the Tree is retained in self.tree) rather than the parent-less AstNode copy - descend to the node at the location, then walk up node.parent() until a node whose kind contains 'function' or 'method' (grammar-appropriate: e.g. Python 'function_definition', JS 'function_declaration'/'method_definition', Rust 'function_item', C/C++ 'function_definition') is found, then read its 'name'/'declarator' field. If staying with AstNode, add parent tracking (e.g. store the containing-function name during convert_node, or record parent indices) so the upward search works.",
+    "Ensure the fix works across languages: verify Python, JavaScript, and Rust at minimum by parsing a small snippet with a named function and asserting get_containing_function for a location inside the body returns the function name.",
+    "Add #[cfg(test)] unit tests in ast.rs: (a) parse Python 'def foo():\\n    x = 1' and assert get_containing_function for the line of 'x = 1' returns Some(\"foo\"); (b) a JavaScript function case; (c) a Rust fn case; (d) a location outside any function returns None. These tests must fail against the current implementation (which returns None) and pass after the fix.",
+    "If practical without adding dependencies or destabilizing the API, surface AST-derived function context in the ast_parsing example (xplainit-core/examples/ast_parsing.rs) so get_containing_function is demonstrated; keep it optional if it risks breaking the example.",
+    "Run `cargo test -p xplainit-core` and confirm the new AST tests pass and existing ast tests still pass.",
+    "Run `cargo run --release --example ast_parsing -p xplainit-core` and confirm it still runs successfully."
+  ],
+  "acceptance_criteria": [
+    "get_containing_function returns Some(function_name) for a location inside a function body (verified for Python, JavaScript, and Rust) and None for a location outside any function.",
+    "New ast.rs unit tests pass and would fail against the pre-fix implementation.",
+    "`cargo test -p xplainit-core` all green; existing ast_parsing example still runs.",
+    "No new external dependencies added."
+  ],
+  "verification": [
+    "cargo test -p xplainit-core",
+    "cargo run --release --example ast_parsing -p xplainit-core",
+    "cargo clippy -p xplainit-core --all-targets -- -D warnings"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

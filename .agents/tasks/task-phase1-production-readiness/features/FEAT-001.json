@@ -1,0 +1,29 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Establish and confirm the baseline build/test state before making changes. Verify the workspace builds, all cargo tests pass, the Python module builds via maturin, and record which Python tests currently pass vs fail. This grounds all later work and confirms the empirical findings in context.json (auto-tracing currently 1/3).",
+  "status": "completed",
+  "steps": [
+    "From repo root run `cargo build --release` and confirm it finishes with no errors (warnings are acceptable at this stage).",
+    "Run `cargo test` for the whole workspace and confirm all tests pass (expected: xplainit-core unit + integration, xplainit-python unit, xplainit-node, xplainit-java all green).",
+    "Activate the venv: `source /projects/sandbox/xplainit-framework/.venv/bin/activate`. From `xplainit-python/` run `maturin develop --release` and confirm the `xplainit` module installs.",
+    "From repo root with venv active run `python test_automatic_tracing.py` and record the result (expected currently: Passed 1/3, 0 events captured for basic + depth tests). This confirms the bug FEAT-002 must fix.",
+    "Run `python xplainit-python/test_decorators.py` and confirm it prints 'ALL DECORATOR TESTS PASSED' (this must stay green through all later features).",
+    "Write the observed baseline (cargo test counts, auto-tracing pass ratio, decorator result) into this feature's `findings` field."
+  ],
+  "acceptance_criteria": [
+    "`cargo build --release` exits 0.",
+    "`cargo test` reports 0 failed across all workspace crates.",
+    "`maturin develop --release` (run from xplainit-python/) succeeds and `python -c \"import xplainit\"` works.",
+    "The baseline auto-tracing result and decorator result are recorded in this feature's findings."
+  ],
+  "verification": [
+    "cargo build --release",
+    "cargo test",
+    "cd xplainit-python && source ../.venv/bin/activate && maturin develop --release",
+    "cd /projects/sandbox/xplainit-framework && source .venv/bin/activate && python test_automatic_tracing.py",
+    "python xplainit-python/test_decorators.py"
+  ],
+  "blocked_reason": null,
+  "findings": "Baseline established and matches context.json expectations.\n\nBUILD: `cargo build --release` exits 0. 3 known warnings in xplainit-python/src/lib.rs (deprecated Option signature on get_explanations line 96 + print_explanations line 101; unused var `backend` line 279). No errors.\n\nCARGO TEST: 0 failed across all workspace crates. Counts by target: xplainit-c = 5 passed; xplainit-core (lib) = 76 passed; xplainit-core integration_tests.rs = 9 passed; xplainit-java = 1 passed; xplainit-node = 1 passed; xplainit-python (lib) = 4 passed; xplainit-core doc-test = 1 passed. Total = 97 passed, 0 failed.\n\nMATURIN: `maturin develop --release` run from xplainit-python/ succeeds; wheel xplainit-0.0.1-cp38-abi3 built and installed editable; `python -c \"import xplainit\"` works.\n\nAUTO-TRACING (python test_automatic_tracing.py, repo root): Passed 1/3 (33%). Basic Tracing = FAIL (0 events captured). Depth Limiting = FAIL (0 events captured, result 15). Module Exclusion = PASS (0 events, stdlib correctly excluded - but passes only because everything is excluded). Confirms the AutoTracer._should_trace bug that FEAT-002 must fix (user/__main__ frames wrongly excluded).\n\nDECORATORS (python xplainit-python/test_decorators.py): prints 'ALL DECORATOR TESTS PASSED' - all 5 decorator tests green (@trace, @trace_class, @profile, @trace_recursive, error handling). Must stay green through later features.\n\nENV NOTES: Rust toolchain + Python 3.9 venv at .venv present and sufficient; no network needed. Node.js not installed (xplainit-node Rust lib compiles/tests fine but no JS testing). maturin must be run from xplainit-python/ (root Cargo.toml is [workspace] only)."
+}

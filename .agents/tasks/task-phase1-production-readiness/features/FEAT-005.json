@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-005",
+  "type": "docs",
+  "description": "Complete Phase 1 Task 1.2 (examples) and Task 1.4 (documentation) together. Task 1.2: custom_filters.rs and event_pipeline.rs already exist and run, so the remaining gap is adding the real-world example(s) the plan calls for. Task 1.4: correct the many docs that overstate Python automatic tracing as 'complete' so they reflect the true, now-fixed state. This is the final Phase 1 feature and depends on FEAT-002 (auto-tracing must actually be fixed before docs can accurately say it works) and FEAT-004.",
+  "status": "pending",
+  "steps": [
+    "Add at least one new real-world Rust example under xplainit-core/examples/ (e.g. real_world_debugging.rs) following the structure/style of existing examples like custom_filters.rs and error_analysis.rs. It should build a realistic scenario (e.g. tracing a small pipeline of function-enter/exit/exception events and generating explanations) and run to completion with clear educational output. Confirm it compiles and runs.",
+    "Verify all existing examples still compile and run: cargo build --release --examples -p xplainit-core, then run each of basic_usage, custom_filters, event_pipeline, error_analysis, ast_parsing, demo_simple (and the new one) with cargo run --release --example <name> -p xplainit-core.",
+    "Update PRODUCTION_READINESS_PLAN.md Phase 1 section: mark Task 1.1 as done noting the crate compiles (correct the stale '35 errors' claim), mark Task 1.2 done noting the examples already existed plus the new real-world example, mark Task 1.3 done describing the get_containing_function fix, and update the 'Definition of Done' checkbox for 'Python automatic tracing works' to checked, now that FEAT-002 fixed it.",
+    "Correct the overstated status docs so they match reality. In README.md, CHANGELOG.md, IMPLEMENTATION_COMPLETE.md, PROGRESS.md, and CURRENT_STATUS_AND_NEXT_STEPS.md, adjust wording so that: (a) Python automatic sys.settrace tracing is described as working and note it was fixed (previously it captured 0 events for __main__ code), and (b) remove or correct any claim that implies it was already fully working when it was not. Add a CHANGELOG entry under an appropriate version/unreleased heading using a `fix:`-style note describing the auto-tracing fix and the AST get_containing_function fix.",
+    "Do NOT delete the historical *_COMPLETE.md files, but where they assert auto-tracing was complete, add a brief correction note (or update the relevant line) so the repository documentation is internally consistent with the fixed code. Prioritize the primary docs (README, CHANGELOG, PROGRESS, CURRENT_STATUS_AND_NEXT_STEPS, IMPLEMENTATION_COMPLETE); a light corrective note is sufficient for the others.",
+    "Re-run the full gate to confirm nothing regressed: cargo test, and (venv active) python test_automatic_tracing.py (3/3) and python xplainit-python/test_decorators.py."
+  ],
+  "acceptance_criteria": [
+    "At least one new real-world example exists in xplainit-core/examples/, compiles, and runs successfully.",
+    "All examples in xplainit-core/examples/ compile (cargo build --release --examples -p xplainit-core exits 0) and each runs without error.",
+    "PRODUCTION_READINESS_PLAN.md Phase 1 tasks reflect true completion state and 'Python automatic tracing works' is checked.",
+    "README.md, CHANGELOG.md, PROGRESS.md, CURRENT_STATUS_AND_NEXT_STEPS.md, and IMPLEMENTATION_COMPLETE.md no longer contain claims contradicting the actual (now-working) auto-tracing state; CHANGELOG has an entry for the fix.",
+    "cargo test still all green; python test_automatic_tracing.py still 3/3; decorator test still passes."
+  ],
+  "verification": [
+    "cargo build --release --examples -p xplainit-core",
+    "cargo run --release --example real_world_debugging -p xplainit-core",
+    "cargo run --release --example custom_filters -p xplainit-core",
+    "cargo run --release --example event_pipeline -p xplainit-core",
+    "cargo test",
+    "cd /projects/sandbox/xplainit-framework && source .venv/bin/activate && python test_automatic_tracing.py && python xplainit-python/test_decorators.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

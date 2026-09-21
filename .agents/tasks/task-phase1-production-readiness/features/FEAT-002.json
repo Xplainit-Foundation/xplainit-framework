@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-002",
+  "type": "fix",
+  "description": "Fix the broken Python automatic runtime hook (sys.settrace) so that automatic tracing actually captures events. This is the single most important correctness gate and directly addresses the user's doubt that 'the auto runtime hook for python is already completed'. Root cause (confirmed empirically): in xplainit-python/python/tracer.py, AutoTracer._should_trace excludes all frames whose module __name__ is '__main__' because '__main__' is in the _stdlib_prefixes frozenset, and the check `'tracer' in module_name` is over-broad. The test functions in test_automatic_tracing.py run under __main__, so 0 events are captured. Fix the frame-filtering logic so user code (including __main__ and files not in the Python stdlib/site-packages) IS traced, while xplainit's own tracer internals and the genuine standard library remain excluded. Ensure sys.settrace local-trace semantics are correct so 'call' returns the local tracer and 'return'/'exception' events fire and are recorded through the Rust backend.",
+  "status": "pending",
+  "steps": [
+    "In xplainit-python/python/tracer.py, remove '__main__' (and 'builtins'/'site' if they block user code) from the _stdlib_prefixes exclusion, OR restructure _should_trace so stdlib exclusion is based on the frame's filename (e.g. path under sys.prefix / site-packages / lib/python) rather than solely on module __name__. The key requirement: frames defined in the user's script (module __name__ == '__main__', or any file not inside the Python install/site-packages) must return True from _should_trace.",
+    "Fix the over-broad self-exclusion: instead of `'xplainit' in module_name or 'tracer' in module_name`, exclude the tracer only by matching this module precisely (e.g. module_name startswith 'xplainit' package prefix, or compare against __name__ of tracer.py) so that user functions named or located anywhere containing the substring 'tracer' are not accidentally skipped. Excluding by frame filename == this file's __file__ is a robust approach.",
+    "Verify the sys.settrace wiring in _trace_callback: the global trace function must return self._trace_callback (the local trace func) from the 'call' branch so that 'return' and 'exception' events are delivered for that frame. Confirm _handle_call returns self._trace_callback and that returning None from the global callback for non-traced frames is intentional. Keep depth accounting correct (increment on call, decrement on return) and ensure the max_depth limit still allows the depth-limiting test to capture >0 events.",
+    "Confirm the values actually cross into Rust: backend.on_function_enter receives a dict (args_dict) which lib.rs converts via parse_python_value; on_function_exit receives a serialized string. Ensure record_* in xplainit-python/src/tracer.rs stores events (they do today, gated on self.enabled). Do not silently drop events. If the try/except: pass blocks in tracer.py are masking a real error, restructure so genuine backend errors surface during development (they may keep the broad except for production safety, but must confirm events are recorded during this fix).",
+    "Rebuild the Python module if any Rust changes were made: cd xplainit-python && source ../.venv/bin/activate && maturin develop --release.",
+    "Run `python test_automatic_tracing.py` from repo root and confirm: Test 1 (basic) captures >0 events and reports SUCCESS, Test 2 (depth limiting) captures >0 events and passes, Test 3 (module exclusion) still shows stdlib (os.path.basename, len) captured as 0 events. Overall must be 'Passed: 3/3'.",
+    "Run `python xplainit-python/test_decorators.py` and confirm it still passes (the fix must not regress manual decorator tracing).",
+    "Run `python xplainit-python/test_automatic_tracing.py` (the secondary copy in xplainit-python/) and confirm consistent behaviour; if it exercises the same path, it should also capture events."
+  ],
+  "acceptance_criteria": [
+    "`python test_automatic_tracing.py` (repo root, venv active) prints 'Passed: 3/3' with Test 1 and Test 2 each reporting captured events > 0.",
+    "Test 3 (module exclusion) still reports 0 events for stdlib calls (os.path.basename, len), i.e. genuine stdlib remains excluded.",
+    "`python xplainit-python/test_decorators.py` still prints 'ALL DECORATOR TESTS PASSED'.",
+    "No infinite recursion or crash occurs while tracing (xplainit/tracer internals are not traced).",
+    "`cargo test` remains all green after any Rust changes."
+  ],
+  "verification": [
+    "cd xplainit-python && source ../.venv/bin/activate && maturin develop --release",
+    "cd /projects/sandbox/xplainit-framework && source .venv/bin/activate && python test_automatic_tracing.py",
+    "python xplainit-python/test_decorators.py",
+    "cargo test"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

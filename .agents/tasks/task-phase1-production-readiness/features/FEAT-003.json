@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-003",
+  "type": "fix",
+  "description": "Complete Phase 1 Task 1.1 (Python bindings) by reconciling reality with the doc and cleaning up the binding crate. The crate already compiles (the doc's claim of 35 PyO3 errors is stale), so the remaining work is: eliminate the 3 compiler warnings in xplainit-python and the unused-import warning in xplainit-node, and add a small Rust unit test asserting the callback -> event-store recording path works so the binding's core behaviour is covered by cargo test. This makes `cargo clippy --all-targets --all-features -- -D warnings` pass, as required by CONTRIBUTING.md. Depends on FEAT-002 (do warning cleanup after the behavioural fix so signatures are final).",
+  "status": "pending",
+  "steps": [
+    "In xplainit-python/src/lib.rs, silence the two deprecated-signature warnings by adding `#[pyo3(signature = (verbosity=None))]` to get_explanations and print_explanations (keeping current default behaviour).",
+    "In xplainit-python/src/lib.rs, resolve the unused `backend` variable warning on the AutoTracer::new pyclass constructor (prefix with underscore, or actually use it if wiring the Rust AutoTracer to a passed backend makes sense - underscore is acceptable since the Python-side AutoTracer is the one actually used).",
+    "In xplainit-node/src/lib.rs remove the unused `use std::collections::HashMap;` import.",
+    "Add a Rust unit test in xplainit-python/src/tracer.rs (or a #[cfg(test)] block in lib.rs) that constructs a PythonTracer (enabled), calls record_function_enter and record_function_exit, and asserts get_events_json() / get_stats() reflect the recorded events (count > 0). This exercises the real recording code path (not a static assertion) so it would fail if recording were broken.",
+    "Run `cargo build --release` and confirm zero warnings for xplainit-python and xplainit-node.",
+    "Run `cargo clippy --all-targets --all-features -- -D warnings` and confirm it exits 0.",
+    "Run `cargo fmt --all` then `cargo test` and confirm all green including the new binding test."
+  ],
+  "acceptance_criteria": [
+    "`cargo build --release` produces no warnings from xplainit-python or xplainit-node.",
+    "`cargo clippy --all-targets --all-features -- -D warnings` exits 0.",
+    "A new cargo test exercises PythonTracer record_* -> get_events/get_stats and passes; it would fail if event recording were removed.",
+    "`cargo test` all green; `python test_automatic_tracing.py` still 3/3 and decorator test still passes (no regression)."
+  ],
+  "verification": [
+    "cargo build --release",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check",
+    "cargo test",
+    "cd xplainit-python && source ../.venv/bin/activate && maturin develop --release && cd .. && python test_automatic_tracing.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

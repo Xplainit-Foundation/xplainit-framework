@@ -1,0 +1,7 @@
+{
+  "task_id": "task-phase1-production-readiness",
+  "task_description": "Complete Phase 1 of PRODUCTION_READINESS_PLAN.md for the Xplainit framework, one task at a time in order, with the confirmed-broken Python automatic runtime hook (sys.settrace) as the top correctness gate. Empirical verification showed: Task 1.1 (Python bindings) already compiles (doc's '35 errors' is stale) and needs only warning cleanup; Task 1.2 examples custom_filters.rs/event_pipeline.rs already exist and run (needs a real-world example added); Task 1.3 AST is not a stub but get_containing_function is broken (returns None); auto-tracing is genuinely broken (1/3 tests, 0 events) due to '__main__' being excluded in tracer.py; Task 1.4 docs overstate auto-tracing as complete. Plan: baseline -> fix auto-tracing -> clean bindings -> fix AST -> examples+docs. Gate: python test_automatic_tracing.py must reach 3/3 with >0 events, decorator test and cargo test stay green.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
+  "blocked_reason": null
+}

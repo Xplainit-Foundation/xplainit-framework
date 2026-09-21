@@ -1,0 +1,36 @@
+{
+  "project_type": "Rust workspace (core tracing/explanation engine) with multi-language bindings; primary Phase-1 focus is the Python binding (PyO3/maturin) plus the Rust core AST module",
+  "language": "Rust (edition 2021) + Python 3.9 (PyO3 abi3 bindings)",
+  "build_system": "Cargo workspace at repo root. IMPORTANT: root Cargo.toml is [workspace] with NO [package], so maturin must be run from xplainit-python/, never repo root. Python module is built with maturin (installed in .venv).",
+  "test_framework": "Rust: built-in cargo test (unit tests in-file + xplainit-core/tests/integration_tests.rs). Python: standalone script-style tests run with `python <file>.py` (test_automatic_tracing.py, xplainit-python/test_decorators.py, etc.) - NOT pytest.",
+  "build_command": "cargo build --release (workspace). For the Python module: cd xplainit-python && source ../.venv/bin/activate && maturin develop --release",
+  "test_command": "cargo test (workspace, all crates). Python correctness gate: source .venv/bin/activate && python test_automatic_tracing.py (from repo root) must show 3/3 passing with >0 events; also python xplainit-python/test_decorators.py must pass.",
+  "verification_instructions": "1) cargo build --release succeeds. 2) cargo test all green. 3) cd xplainit-python && maturin develop --release. 4) From repo root with venv active: python test_automatic_tracing.py shows 'Passed: 3/3' and each captured-events count > 0 for the basic + depth tests. 5) python xplainit-python/test_decorators.py prints 'ALL DECORATOR TESTS PASSED'. 6) cargo run --release --example <name> -p xplainit-core runs for each example. CONTRIBUTING.md also expects cargo fmt --all and cargo clippy --all-targets --all-features -- -D warnings to be clean.",
+  "snapshot_or_generated_files": "None. The compiled Python extension module (installed as editable package `xplainit`) is produced by maturin develop and is not checked in. target/ is build output.",
+  "setup_instructions": "Rust toolchain 1.92 and Python 3.9 venv already present. Activate venv: source /projects/sandbox/xplainit-framework/.venv/bin/activate (maturin 1.15 installed there). No network needed for build; all deps vendored in Cargo.lock and venv.",
+  "environment_constraints": "Network mode restricts external access; do NOT add new external crate dependencies or fetch new packages - all needed tree-sitter grammars (python/javascript/rust/c/cpp), pyo3, maturin are already available. Node.js is NOT installed (xplainit-node cannot be JS-tested, but its Rust lib compiles). Work stays confined to Rust + Python.",
+  "contribution_requirements": "From CONTRIBUTING.md: run cargo fmt --all, cargo clippy --all-targets --all-features -- -D warnings, cargo test --all before considering work done. Commit message prefixes: feat/fix/docs/test/refactor/chore. Do NOT push or open PRs (orchestrator handles that).",
+  "key_patterns": "Python auto-tracer: xplainit-python/python/tracer.py class AutoTracer uses sys.settrace; its _trace_callback must RETURN a local trace function for 'call' events so that 'return'/'exception' fire. Backend callbacks (on_function_enter/on_function_exit/on_exception/on_line_execute) live on the Rust Xplainit pyclass in xplainit-python/src/lib.rs and delegate to PythonTracer in src/tracer.rs which records ExecutionEvent variants into the EventStore. Events retrieved via backend.get_events() (JSON), get_stats(), get_explanations(verbosity). Rust AST: xplainit-core/src/ast.rs uses tree_sitter with per-language grammar via ::language().",
+  "relevant_files": [
+    "xplainit-python/python/tracer.py (AutoTracer - contains the auto-tracing bug)",
+    "xplainit-python/src/lib.rs (PyO3 Xplainit class + callbacks + AutoTracer pyclass; has 3 warnings to clean)",
+    "xplainit-python/src/tracer.rs (PythonTracer backend, record_* methods, parse_python_value)",
+    "xplainit-python/src/decorators.rs",
+    "test_automatic_tracing.py (repo root - the correctness gate, 3 tests)",
+    "xplainit-python/test_decorators.py (must stay green)",
+    "xplainit-python/test_automatic_tracing.py (secondary copy of auto-trace test)",
+    "xplainit-core/src/ast.rs (tree-sitter parser; get_containing_function returns None - no parent tracking)",
+    "xplainit-core/examples/ (basic_usage, custom_filters, event_pipeline, error_analysis, ast_parsing, demo_simple - all compile today)",
+    "xplainit-node/src/lib.rs (unused HashMap import warning)",
+    "PRODUCTION_READINESS_PLAN.md (authoritative Phase 1 definition)",
+    "README.md, CHANGELOG.md, IMPLEMENTATION_COMPLETE.md, PROGRESS.md, CURRENT_STATUS_AND_NEXT_STEPS.md (overstate auto-tracing as complete - need correction)"
+  ],
+  "directory_structure": "Repo root has the Cargo workspace + many *_COMPLETE.md/PROGRESS.md status docs (several inaccurate) + root-level Python test scripts + demo_*.py. xplainit-core/ = engine (events, event_store, explainer, error_explainer, ast, filter, pipeline, runtime, etc.) with examples/ and tests/. xplainit-python/ = PyO3 crate: src/ (Rust: lib.rs, tracer.rs, decorators.rs) + python/ (pure-Python: tracer.py AutoTracer, decorators.py, __init__.py). Other binding crates: xplainit-node/java/c (Rust libs compile), xplainit-go (not a workspace member), xplainit-cli (commented out of workspace).",
+  "empirical_findings": {
+    "task_1_1_python_bindings": "DOC STALE: doc claims 35 compile errors; reality = crate compiles clean with 3 warnings (deprecated Option signature x2, unused `backend` var). No PyO3 migration blocking work remains; only warning cleanup.",
+    "task_1_2_examples": "DOC STALE: custom_filters.rs and event_pipeline.rs already exist, compile, and run successfully. Genuine gap = no real-world examples as the doc requests (e.g. real_world_debugging.rs).",
+    "task_1_3_ast": "DOC PARTIALLY STALE: ast.rs is NOT a stub - tree-sitter parse/find_node_at/get_context work. Genuine bug: get_containing_function always returns None (no parent-link tracking / no upward walk). Also AST parsing is not exposed to the Python binding.",
+    "task_1_4_docs": "Multiple docs claim Python auto-tracing complete; it is not. Must be corrected after code fix.",
+    "auto_tracing_ROOT_CAUSE": "CONFIRMED BROKEN: python test_automatic_tracing.py = 1/3 pass, 0 events. In tracer.py AutoTracer._should_trace, '__main__' is listed in _stdlib_prefixes frozenset AND the check `'tracer' in module_name` is over-broad; test functions run under module __name__=='__main__', so every user frame is excluded -> 0 events. Fix must let user/__main__ code be traced while still excluding xplainit's own tracer internals and genuine stdlib, and keep test_module_exclusion passing (stdlib like os/len stays excluded)."
+  }
+}
