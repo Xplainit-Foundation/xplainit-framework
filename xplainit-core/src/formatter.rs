@@ -251,6 +251,57 @@ impl OutputFormatter for HtmlFormatter {
                     location.file, location.line
                 );
             }
+            ExecutionEvent::AsyncTaskStart {
+                task_id,
+                task_name,
+                spawned_from,
+                ..
+            } => {
+                let _ = writeln!(
+                    html,
+                    "    <p><strong>Async task started:</strong> {}</p>",
+                    task_name
+                );
+                let _ = writeln!(html, "    <p><strong>Task id:</strong> {}</p>", task_id);
+                let _ = writeln!(
+                    html,
+                    "    <p class=\"location\">{}:{}</p>",
+                    spawned_from.file, spawned_from.line
+                );
+            }
+            ExecutionEvent::AsyncTaskAwait {
+                task_id,
+                awaiting_on,
+                location,
+                ..
+            } => {
+                let _ = writeln!(
+                    html,
+                    "    <p><strong>Task {} awaiting:</strong> {}</p>",
+                    task_id, awaiting_on
+                );
+                let _ = writeln!(
+                    html,
+                    "    <p class=\"location\">{}:{}</p>",
+                    location.file, location.line
+                );
+            }
+            ExecutionEvent::AsyncTaskResume {
+                task_id,
+                resumed_with,
+                location,
+                ..
+            } => {
+                let _ = writeln!(html, "    <p><strong>Task {} resumed</strong></p>", task_id);
+                if let Some(val) = resumed_with {
+                    let _ = writeln!(html, "    <p><strong>Resumed with:</strong> {:?}</p>", val);
+                }
+                let _ = writeln!(
+                    html,
+                    "    <p class=\"location\">{}:{}</p>",
+                    location.file, location.line
+                );
+            }
             _ => {
                 let _ = writeln!(html, "    <p>{:?}</p>", event);
             }
@@ -377,6 +428,42 @@ impl OutputFormatter for MarkdownFormatter {
                 let _ = writeln!(md, "**Error Type:** `{}`", error_type);
                 let _ = writeln!(md, "**Status:** {}", status);
                 let _ = writeln!(md, "**Message:** {}", message);
+                let _ = writeln!(md, "**Location:** `{}:{}`", location.file, location.line);
+            }
+            ExecutionEvent::AsyncTaskStart {
+                task_id,
+                task_name,
+                spawned_from,
+                ..
+            } => {
+                let _ = writeln!(md, "**Async Task:** `{}`", task_name);
+                let _ = writeln!(md, "**Task ID:** `{}`", task_id);
+                let _ = writeln!(
+                    md,
+                    "**Spawned From:** `{}:{}`",
+                    spawned_from.file, spawned_from.line
+                );
+            }
+            ExecutionEvent::AsyncTaskAwait {
+                task_id,
+                awaiting_on,
+                location,
+                ..
+            } => {
+                let _ = writeln!(md, "**Task ID:** `{}`", task_id);
+                let _ = writeln!(md, "**Awaiting On:** `{}`", awaiting_on);
+                let _ = writeln!(md, "**Location:** `{}:{}`", location.file, location.line);
+            }
+            ExecutionEvent::AsyncTaskResume {
+                task_id,
+                resumed_with,
+                location,
+                ..
+            } => {
+                let _ = writeln!(md, "**Task ID:** `{}`", task_id);
+                if let Some(val) = resumed_with {
+                    let _ = writeln!(md, "**Resumed With:** `{:?}`", val);
+                }
                 let _ = writeln!(md, "**Location:** `{}:{}`", location.file, location.line);
             }
             _ => {

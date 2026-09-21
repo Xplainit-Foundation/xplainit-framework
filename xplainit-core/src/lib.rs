@@ -26,6 +26,7 @@
 
 pub mod advanced_filter;
 pub mod ast;
+pub mod async_tracker;
 pub mod collector;
 pub mod config;
 pub mod control;
@@ -46,6 +47,7 @@ pub use advanced_filter::{
     AdvancedFilter, CallStackFilter, ModuleFilter, PerformanceFilter, RegexFilter,
 };
 pub use ast::{AstCache, AstNode, AstParser};
+pub use async_tracker::{AsyncTaskTracker, TaskState, TaskTimeline};
 pub use collector::{
     BaseCollector, CollectionTarget, CollectorConfig, CollectorStats, EventCollector,
 };

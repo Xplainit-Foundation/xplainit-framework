@@ -283,6 +283,34 @@ pub enum ExecutionEvent {
         leaked_bytes: usize,
         timestamp: DateTime<Utc>,
     },
+
+    // ===== Async / Concurrency Events =====
+    /// An async task was spawned/started
+    AsyncTaskStart {
+        id: Uuid,
+        task_id: Uuid,
+        task_name: String,
+        spawned_from: SourceLocation,
+        timestamp: DateTime<Utc>,
+    },
+
+    /// An async task suspended at an await point
+    AsyncTaskAwait {
+        id: Uuid,
+        task_id: Uuid,
+        awaiting_on: String,
+        location: SourceLocation,
+        timestamp: DateTime<Utc>,
+    },
+
+    /// An async task resumed after an await point
+    AsyncTaskResume {
+        id: Uuid,
+        task_id: Uuid,
+        resumed_with: Option<Value>,
+        location: SourceLocation,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 impl ExecutionEvent {
@@ -310,6 +338,9 @@ impl ExecutionEvent {
             ExecutionEvent::InfiniteLoopDetected { id, .. } => id,
             ExecutionEvent::DeadlockDetected { id, .. } => id,
             ExecutionEvent::MemoryLeakDetected { id, .. } => id,
+            ExecutionEvent::AsyncTaskStart { id, .. } => id,
+            ExecutionEvent::AsyncTaskAwait { id, .. } => id,
+            ExecutionEvent::AsyncTaskResume { id, .. } => id,
         }
     }
 
@@ -337,6 +368,9 @@ impl ExecutionEvent {
             ExecutionEvent::InfiniteLoopDetected { timestamp, .. } => timestamp,
             ExecutionEvent::DeadlockDetected { timestamp, .. } => timestamp,
             ExecutionEvent::MemoryLeakDetected { timestamp, .. } => timestamp,
+            ExecutionEvent::AsyncTaskStart { timestamp, .. } => timestamp,
+            ExecutionEvent::AsyncTaskAwait { timestamp, .. } => timestamp,
+            ExecutionEvent::AsyncTaskResume { timestamp, .. } => timestamp,
         }
     }
 
@@ -383,6 +417,9 @@ impl ExecutionEvent {
             ExecutionEvent::InfiniteLoopDetected { location, .. } => location.clone(),
             ExecutionEvent::DeadlockDetected { .. } => SourceLocation::unknown(),
             ExecutionEvent::MemoryLeakDetected { .. } => SourceLocation::unknown(),
+            ExecutionEvent::AsyncTaskStart { spawned_from, .. } => spawned_from.clone(),
+            ExecutionEvent::AsyncTaskAwait { location, .. } => location.clone(),
+            ExecutionEvent::AsyncTaskResume { location, .. } => location.clone(),
         }
     }
 
@@ -410,6 +447,9 @@ impl ExecutionEvent {
             ExecutionEvent::InfiniteLoopDetected { .. } => "infinite_loop",
             ExecutionEvent::DeadlockDetected { .. } => "deadlock",
             ExecutionEvent::MemoryLeakDetected { .. } => "memory_leak",
+            ExecutionEvent::AsyncTaskStart { .. } => "async_task_start",
+            ExecutionEvent::AsyncTaskAwait { .. } => "async_task_await",
+            ExecutionEvent::AsyncTaskResume { .. } => "async_task_resume",
         }
     }
 }
@@ -447,5 +487,105 @@ mod tests {
         };
 
         assert!(error_event.is_error());
+    }
+
+    #[test]
+    fn test_async_task_start_accessors() {
+        let id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+        let ts = Utc::now();
+        let event = ExecutionEvent::AsyncTaskStart {
+            id,
+            task_id,
+            task_name: "worker".to_string(),
+            spawned_from: SourceLocation::new("main.rs".to_string(), 12, 3),
+            timestamp: ts,
+        };
+
+        assert_eq!(event.id(), &id);
+        assert_eq!(event.timestamp(), &ts);
+        assert_eq!(event.event_type(), "async_task_start");
+        assert_eq!(event.location().file, "main.rs");
+        assert_eq!(event.location().line, 12);
+        assert!(!event.is_error());
+    }
+
+    #[test]
+    fn test_async_task_await_accessors() {
+        let id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+        let ts = Utc::now();
+        let event = ExecutionEvent::AsyncTaskAwait {
+            id,
+            task_id,
+            awaiting_on: "fetch_data".to_string(),
+            location: SourceLocation::new("worker.rs".to_string(), 20, 5),
+            timestamp: ts,
+        };
+
+        assert_eq!(event.id(), &id);
+        assert_eq!(event.timestamp(), &ts);
+        assert_eq!(event.event_type(), "async_task_await");
+        assert_eq!(event.location().file, "worker.rs");
+        assert_eq!(event.location().line, 20);
+        assert!(!event.is_error());
+    }
+
+    #[test]
+    fn test_async_task_resume_accessors() {
+        let id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+        let ts = Utc::now();
+        let event = ExecutionEvent::AsyncTaskResume {
+            id,
+            task_id,
+            resumed_with: Some(Value::Integer(42)),
+            location: SourceLocation::new("worker.rs".to_string(), 21, 5),
+            timestamp: ts,
+        };
+
+        assert_eq!(event.id(), &id);
+        assert_eq!(event.timestamp(), &ts);
+        assert_eq!(event.event_type(), "async_task_resume");
+        assert_eq!(event.location().file, "worker.rs");
+        assert_eq!(event.location().line, 21);
+        assert!(!event.is_error());
+    }
+
+    #[test]
+    fn test_async_events_serde_round_trip() {
+        let events = vec![
+            ExecutionEvent::AsyncTaskStart {
+                id: Uuid::new_v4(),
+                task_id: Uuid::new_v4(),
+                task_name: "worker".to_string(),
+                spawned_from: SourceLocation::new("main.rs".to_string(), 12, 3),
+                timestamp: Utc::now(),
+            },
+            ExecutionEvent::AsyncTaskAwait {
+                id: Uuid::new_v4(),
+                task_id: Uuid::new_v4(),
+                awaiting_on: "fetch_data".to_string(),
+                location: SourceLocation::new("worker.rs".to_string(), 20, 5),
+                timestamp: Utc::now(),
+            },
+            ExecutionEvent::AsyncTaskResume {
+                id: Uuid::new_v4(),
+                task_id: Uuid::new_v4(),
+                resumed_with: Some(Value::String("done".to_string())),
+                location: SourceLocation::new("worker.rs".to_string(), 21, 5),
+                timestamp: Utc::now(),
+            },
+        ];
+
+        for event in events {
+            let json = serde_json::to_string(&event).expect("serialize");
+            let decoded: ExecutionEvent = serde_json::from_str(&json).expect("deserialize");
+            // Compare via the serialized form since ExecutionEvent has no PartialEq.
+            let rejson = serde_json::to_string(&decoded).expect("reserialize");
+            assert_eq!(json, rejson);
+            assert_eq!(event.event_type(), decoded.event_type());
+            assert_eq!(event.id(), decoded.id());
+        }
     }
 }

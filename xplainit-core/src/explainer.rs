@@ -207,6 +207,24 @@ impl ExplanationGenerator {
                 leaked_bytes,
                 ..
             } => self.explain_memory_leak(*allocation_count, *leaked_bytes),
+            ExecutionEvent::AsyncTaskStart {
+                task_id,
+                task_name,
+                spawned_from,
+                ..
+            } => self.explain_async_task_start(task_id, task_name, spawned_from),
+            ExecutionEvent::AsyncTaskAwait {
+                task_id,
+                awaiting_on,
+                location,
+                ..
+            } => self.explain_async_task_await(task_id, awaiting_on, location),
+            ExecutionEvent::AsyncTaskResume {
+                task_id,
+                resumed_with,
+                location,
+                ..
+            } => self.explain_async_task_resume(task_id, resumed_with, location),
         };
 
         explanation.push_str(&main_text);
@@ -1013,6 +1031,88 @@ impl ExplanationGenerator {
         }
     }
 
+    // ===== Async / Concurrency Event Explanations =====
+
+    fn explain_async_task_start(
+        &self,
+        task_id: &uuid::Uuid,
+        task_name: &str,
+        spawned_from: &SourceLocation,
+    ) -> String {
+        match self.verbosity {
+            VerbosityLevel::Brief => {
+                format!("Started async task \"{}\"", task_name)
+            }
+            VerbosityLevel::Normal => {
+                format!(
+                    "Started async task \"{}\" (id {}) spawned from {}:{}",
+                    task_name, task_id, spawned_from.file, spawned_from.line
+                )
+            }
+            VerbosityLevel::Detailed | VerbosityLevel::Debug => {
+                format!(
+                    "Async task started\n  Name: {}\n  Task id: {}\n  Spawned from: {}:{}",
+                    task_name, task_id, spawned_from.file, spawned_from.line
+                )
+            }
+        }
+    }
+
+    fn explain_async_task_await(
+        &self,
+        task_id: &uuid::Uuid,
+        awaiting_on: &str,
+        location: &SourceLocation,
+    ) -> String {
+        match self.verbosity {
+            VerbosityLevel::Brief => {
+                format!("Task {} is awaiting {}", task_id, awaiting_on)
+            }
+            VerbosityLevel::Normal => {
+                format!(
+                    "Task {} is awaiting {} at {}:{}",
+                    task_id, awaiting_on, location.file, location.line
+                )
+            }
+            VerbosityLevel::Detailed | VerbosityLevel::Debug => {
+                format!(
+                    "Async task suspended at an await point\n  Task id: {}\n  Awaiting on: {}\n  Location: {}:{}",
+                    task_id, awaiting_on, location.file, location.line
+                )
+            }
+        }
+    }
+
+    fn explain_async_task_resume(
+        &self,
+        task_id: &uuid::Uuid,
+        resumed_with: &Option<Value>,
+        location: &SourceLocation,
+    ) -> String {
+        let value_text = match resumed_with {
+            Some(val) => self.format_value(val),
+            None => "no value".to_string(),
+        };
+
+        match self.verbosity {
+            VerbosityLevel::Brief => {
+                format!("Task {} resumed with {}", task_id, value_text)
+            }
+            VerbosityLevel::Normal => {
+                format!(
+                    "Task {} resumed with {} at {}:{}",
+                    task_id, value_text, location.file, location.line
+                )
+            }
+            VerbosityLevel::Detailed | VerbosityLevel::Debug => {
+                format!(
+                    "Async task resumed after an await point\n  Task id: {}\n  Resumed with: {}\n  Location: {}:{}",
+                    task_id, value_text, location.file, location.line
+                )
+            }
+        }
+    }
+
     // ===== Helper Methods =====
 
     #[allow(clippy::only_used_in_recursion)]
@@ -1162,5 +1262,58 @@ mod tests {
         let explanation = explainer.explain(&event);
         assert!(explanation.starts_with("["));
         assert!(explanation.contains(":"));
+    }
+
+    #[test]
+    fn test_explain_async_task_start() {
+        let explainer = ExplanationGenerator::new(VerbosityLevel::Normal);
+        let task_id = Uuid::new_v4();
+
+        let event = ExecutionEvent::AsyncTaskStart {
+            id: Uuid::new_v4(),
+            task_id,
+            task_name: "worker".to_string(),
+            spawned_from: SourceLocation::new("main.rs".to_string(), 12, 3),
+            timestamp: Utc::now(),
+        };
+
+        let explanation = explainer.explain(&event);
+        assert!(explanation.contains("Started async task \"worker\""));
+        assert!(explanation.contains(&task_id.to_string()));
+        assert!(explanation.contains("main.rs:12"));
+    }
+
+    #[test]
+    fn test_explain_async_task_await() {
+        let explainer = ExplanationGenerator::new(VerbosityLevel::Normal);
+        let task_id = Uuid::new_v4();
+
+        let event = ExecutionEvent::AsyncTaskAwait {
+            id: Uuid::new_v4(),
+            task_id,
+            awaiting_on: "fetch_data".to_string(),
+            location: SourceLocation::new("worker.rs".to_string(), 20, 5),
+            timestamp: Utc::now(),
+        };
+
+        let explanation = explainer.explain(&event);
+        assert!(explanation.contains(&format!("Task {} is awaiting fetch_data", task_id)));
+    }
+
+    #[test]
+    fn test_explain_async_task_resume() {
+        let explainer = ExplanationGenerator::new(VerbosityLevel::Normal);
+        let task_id = Uuid::new_v4();
+
+        let event = ExecutionEvent::AsyncTaskResume {
+            id: Uuid::new_v4(),
+            task_id,
+            resumed_with: Some(Value::Integer(42)),
+            location: SourceLocation::new("worker.rs".to_string(), 21, 5),
+            timestamp: Utc::now(),
+        };
+
+        let explanation = explainer.explain(&event);
+        assert!(explanation.contains(&format!("Task {} resumed with 42", task_id)));
     }
 }
