@@ -1,7 +1,14 @@
 {
   "task_id": "task-phase2-runtime-hooks",
   "task_description": "Phase 2 (RUNTIME HOOKS) from PRODUCTION_READINESS_PLAN.md: implement automatic/real event capture from running code per language, driven one task at a time in order. FEAT-001 baseline; FEAT-002 Task 2.1 Python sys.settrace completion + depth-bug fix; FEAT-003 Task 2.2 Node.js hook (partial - no node/npm in sandbox); FEAT-004 Task 2.3 C/C++ -finstrument-functions hook; FEAT-005 Task 2.4 Java JVMTI agent; FEAT-006 Task 2.5 Go CGO/defer tracing (depends on FEAT-004). Verify empirically; never overstate completion. Work committed directly to master by the orchestrator (NOT via PR); coder commits on branch phase2-runtime-hooks.",
-  "status": "in_progress",
+  "status": "completed",
   "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005", "FEAT-006"],
-  "blocked_reason": null
+  "blocked_reason": null,
+  "verification": {
+    "build": "pass",
+    "tests": "pass",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "Final pass (branch phase2-runtime-hooks, 7 commits ahead of master, working tree clean). cargo build --release clean; cargo test all pass (c 11, core 82, core integration 9, java 1, node 1, python 6, doc-test 1); cargo clippy --all-targets --all-features -D warnings clean. Python: test_automatic_tracing 3/3, test_frame_filter 11/11, test_depth_accounting 23/23, test_decorators pass. Per-language hook gates re-run and capture REAL events end to end: C (xplainit-c/examples/build.sh) 16 events incl. recursion+DivisionByZero via -finstrument-functions/dladdr; Java (build_agent.sh) live JVM under -agentpath captures MethodEntry/MethodExit incl. recursion + ArithmeticException; Go (go test -count=1 + examples/basic.go) 15 events with file/line incl. factorial recursion + DivisionByZero; Node (bun test) 44/44 mock-backend assertions of real tracer capture sequence. test_quality: reviewed - each test exercises the new/changed code path and would fail if reverted (Python depth test proves tracing does not wedge past max_depth; C/Java/Go gates assert non-empty real events with expected names). docker_build skipped: no Dockerfile in repo and INTEGRATIONS_ONLY network. HONEST CAVEAT: Task 2.2 (Node) native JS->Rust round-trip is UNVERIFIED in-sandbox because node/npm are absent (only bun, which cannot load the Neon N-API addon); the Rust addon builds and the JS tracer capture logic is verified via injectable mock, but end-to-end native verification requires a real Node.js+npm install. Java/Go hooks capture method name + declaring-class/file location but not argument values or (Java) source line numbers - documented, not overstated."
+  }
 }
