@@ -159,6 +159,27 @@ pub struct Config {
 
     /// Filter: exclude these modules (e.g., standard library)
     pub exclude_modules: Vec<String>,
+
+    /// Redact captured values whose key looks like a secret (default: true).
+    ///
+    /// When enabled, values keyed by names matching [`Self::redact_key_patterns`]
+    /// are replaced with a redacted placeholder before they leave the process
+    /// (console output, JSON serialization, dashboard payloads).
+    pub redact_secrets: bool,
+
+    /// Case-insensitive substrings that mark a value key as secret-like.
+    ///
+    /// Defaults to common secret names (password, token, api_key, ...). Matched
+    /// as substrings so keys like `db_password` are covered.
+    pub redact_key_patterns: Vec<String>,
+}
+
+/// Build the default set of redaction key patterns.
+fn default_redact_key_patterns() -> Vec<String> {
+    crate::security::DEFAULT_REDACTION_PATTERNS
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 impl Default for Config {
@@ -183,6 +204,8 @@ impl Default for Config {
             exclude_functions: Vec::new(),
             include_modules: Vec::new(),
             exclude_modules: Vec::new(),
+            redact_secrets: true,
+            redact_key_patterns: default_redact_key_patterns(),
         }
     }
 }
@@ -296,5 +319,19 @@ mod tests {
         assert_eq!(config.max_depth, 100);
         assert!(config.track_variables);
         assert!(config.capture_errors);
+    }
+
+    #[test]
+    fn test_redaction_defaults_on_with_secret_patterns() {
+        let config = Config::default();
+        // Redaction must default to on (safe-by-default policy).
+        assert!(config.redact_secrets);
+        // The default pattern set must include the common secret names.
+        for expected in ["password", "token", "api_key", "secret", "private_key"] {
+            assert!(
+                config.redact_key_patterns.iter().any(|p| p == expected),
+                "default redaction patterns missing '{expected}'"
+            );
+        }
     }
 }

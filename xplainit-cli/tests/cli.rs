@@ -110,7 +110,9 @@ fn analyze_missing_file_fails() {
     let out = run(&["analyze", "/no/such/file-xplainit-test.json"]);
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("file not found"));
+    // Path validation rejects the missing file with a clear, actionable error
+    // before it is opened (see xplainit_core::validate_input_path).
+    assert!(stderr.contains("does not exist"));
 }
 
 #[test]

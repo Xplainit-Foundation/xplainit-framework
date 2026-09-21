@@ -48,6 +48,33 @@ pub enum Value {
 }
 
 impl Value {
+    /// Recursively redact any secret-like keys nested inside object values.
+    ///
+    /// Used so that a value which is itself an object (for example a captured
+    /// struct or dict) still has its inner `password`/`token` fields scrubbed.
+    pub(crate) fn redacted_nested(&self, patterns: &[String]) -> Value {
+        match self {
+            Value::Object(map) => {
+                let mut out = HashMap::with_capacity(map.len());
+                for (k, v) in map {
+                    if crate::security::is_redaction_key(k, patterns) {
+                        out.insert(
+                            k.clone(),
+                            Value::String(crate::security::REDACTED_PLACEHOLDER.to_string()),
+                        );
+                    } else {
+                        out.insert(k.clone(), v.redacted_nested(patterns));
+                    }
+                }
+                Value::Object(out)
+            }
+            Value::Array(items) => {
+                Value::Array(items.iter().map(|v| v.redacted_nested(patterns)).collect())
+            }
+            other => other.clone(),
+        }
+    }
+
     pub fn type_name(&self) -> &'static str {
         match self {
             Value::Null => "null",
@@ -452,6 +479,76 @@ impl ExecutionEvent {
             ExecutionEvent::AsyncTaskResume { .. } => "async_task_resume",
         }
     }
+
+    /// Return a clone of this event with secret-like named values redacted.
+    ///
+    /// `patterns` are the case-insensitive substrings that mark a key as
+    /// secret (see [`crate::security::DEFAULT_REDACTION_PATTERNS`]). Any
+    /// argument, variable or context value whose key matches is replaced with
+    /// the redacted placeholder, and nested object/array values are scrubbed
+    /// recursively. This is the single choke point the CLI, dashboard and
+    /// bindings call before events leave the process (console, JSON, HTTP).
+    pub fn redacted(&self, patterns: &[String]) -> ExecutionEvent {
+        let mut event = self.clone();
+        match &mut event {
+            ExecutionEvent::FunctionEnter { args, .. } => redact_named_map(args, patterns),
+            ExecutionEvent::VariableDeclaration { name, value, .. } => {
+                if crate::security::is_redaction_key(name, patterns) {
+                    if let Some(v) = value {
+                        *v = Value::String(crate::security::REDACTED_PLACEHOLDER.to_string());
+                    }
+                } else if let Some(v) = value {
+                    *v = v.redacted_nested(patterns);
+                }
+            }
+            ExecutionEvent::VariableAssign {
+                name,
+                old_value,
+                new_value,
+                ..
+            } => {
+                if crate::security::is_redaction_key(name, patterns) {
+                    *new_value = Value::String(crate::security::REDACTED_PLACEHOLDER.to_string());
+                    if let Some(v) = old_value {
+                        *v = Value::String(crate::security::REDACTED_PLACEHOLDER.to_string());
+                    }
+                } else {
+                    *new_value = new_value.redacted_nested(patterns);
+                    if let Some(v) = old_value {
+                        *v = v.redacted_nested(patterns);
+                    }
+                }
+            }
+            ExecutionEvent::RuntimeError { context, .. } => redact_named_map(context, patterns),
+            ExecutionEvent::Exception { stack_trace, .. }
+            | ExecutionEvent::Panic { stack_trace, .. } => {
+                for frame in stack_trace.iter_mut() {
+                    redact_named_map(&mut frame.arguments, patterns);
+                }
+            }
+            _ => {}
+        }
+        event
+    }
+}
+
+/// Redact secret-like keys in a named-value map in place.
+fn redact_named_map(map: &mut HashMap<String, Value>, patterns: &[String]) {
+    for (key, value) in map.iter_mut() {
+        if crate::security::is_redaction_key(key, patterns) {
+            *value = Value::String(crate::security::REDACTED_PLACEHOLDER.to_string());
+        } else {
+            *value = value.redacted_nested(patterns);
+        }
+    }
+}
+
+/// Redact secret-like named values across a slice of events.
+///
+/// Convenience wrapper used by the CLI and dashboard so they redact a whole
+/// trace with one call before rendering or serializing it.
+pub fn redact_events(events: &[ExecutionEvent], patterns: &[String]) -> Vec<ExecutionEvent> {
+    events.iter().map(|e| e.redacted(patterns)).collect()
 }
 
 #[cfg(test)]

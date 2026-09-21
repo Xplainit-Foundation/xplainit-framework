@@ -122,6 +122,10 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeFree(
     handle: jlong,
 ) {
     if handle != 0 {
+        // SAFETY: `handle` is non-zero (checked above) and, per contract, was
+        // produced by `Box::into_raw` in `nativeCreate` and not yet freed.
+        // Reconstructing the `Box` takes ownership and drops it exactly once;
+        // Java must not use the handle afterwards.
         unsafe {
             let _ = Box::from_raw(handle as *mut RuntimeHandle);
         }
@@ -139,6 +143,9 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeEnable(
         return 0;
     }
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer from `nativeCreate`. Only a shared reference to the
+    // atomic `enabled` flag is taken, which is sound under concurrent JNI calls.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         runtime_ref.enabled.store(true, Ordering::SeqCst);
@@ -157,6 +164,9 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeDisable(
         return 0;
     }
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer. Only a shared reference to the atomic `enabled`
+    // flag is taken, which is sound under concurrent JNI calls.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         runtime_ref.enabled.store(false, Ordering::SeqCst);
@@ -175,6 +185,9 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeIsEnabled(
         return 0;
     }
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer. Only the atomic `enabled` flag is read through a
+    // shared reference, which is sound.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         if runtime_ref.enabled.load(Ordering::SeqCst) {
@@ -199,6 +212,9 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeGetEvents(
             .into_raw();
     }
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer. A shared reference is taken and the `Mutex`
+    // guards concurrent access to the runtime.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         let runtime = runtime_ref.runtime.lock().unwrap();
@@ -223,6 +239,9 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeClearEvents(
         return 0;
     }
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer. A shared reference is taken and the `Mutex`
+    // guards concurrent access to the runtime.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         let runtime = runtime_ref.runtime.lock().unwrap();
@@ -245,6 +264,9 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeGetStatistics(
             .into_raw();
     }
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer. A shared reference is taken and the `Mutex`
+    // guards concurrent access to the runtime.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         let runtime = runtime_ref.runtime.lock().unwrap();
@@ -298,6 +320,10 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeOnMethodEnter(
     let name = jstring_to_string(&mut env, &name).unwrap_or_else(|| "<unknown>".to_string());
     let signature = jstring_to_string(&mut env, &signature).unwrap_or_default();
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer. A shared reference is taken; the atomic flag and
+    // `Mutex` make concurrent access sound. The `JString` args were already
+    // converted to owned Rust strings (null-checked) before this block.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         if !runtime_ref.enabled.load(Ordering::SeqCst) {
@@ -324,6 +350,10 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeOnMethodExit(
 
     let name = jstring_to_string(&mut env, &name).unwrap_or_else(|| "<unknown>".to_string());
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer. A shared reference is taken; the atomic flag and
+    // `Mutex` make concurrent access sound. The `JString` arg was already
+    // converted to an owned Rust string (null-checked) before this block.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         if !runtime_ref.enabled.load(Ordering::SeqCst) {
@@ -356,6 +386,10 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeOnException(
     let message = jstring_to_string(&mut env, &message).unwrap_or_default();
     let file = jstring_to_string(&mut env, &file).unwrap_or_else(|| "<jvm>".to_string());
 
+    // SAFETY: `handle` is non-zero (checked above) and, per contract, is a live
+    // `RuntimeHandle` pointer. A shared reference is taken; the atomic flag and
+    // `Mutex` make concurrent access sound. The `JString` args were already
+    // converted to owned Rust strings (null-checked) before this block.
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         if !runtime_ref.enabled.load(Ordering::SeqCst) {

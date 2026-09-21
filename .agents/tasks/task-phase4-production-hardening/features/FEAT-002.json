@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Task 4.2 Error Recovery (HIGH). Guarantee tracing failures never crash the host program: harden the existing panic_mode/safe_execute path in control.rs, add a circuit-breaker that auto-disables the framework after repeated errors, isolate tracing errors from the application, and add framework-error telemetry with a debug mode. Explicitly account for the release profile's panic=abort setting.",
+  "status": "pending",
+  "steps": [
+    "Read xplainit-core/src/control.rs (RuntimeControl, safe_execute, panic_mode) and note that the release profile sets panic=\"abort\" in root Cargo.toml, which makes std::panic::catch_unwind ineffective in release builds. Decide and document the recovery strategy: either (a) set panic = \"unwind\" for the relevant crate/profile so catch_unwind works (justify the tradeoff vs the current abort setting), or (b) keep abort and rely on the circuit-breaker + Result-based error isolation for non-panicking failures, documenting the limitation honestly. Prefer the approach that actually makes safe_execute meaningful; whichever is chosen, do not silently leave safe_execute claiming protection it cannot deliver.",
+    "Add a circuit-breaker to RuntimeControl: an AtomicU64 error counter and a configurable threshold (e.g. max_consecutive_errors, default from config). Add methods record_error() (increments; when count >= threshold, calls enter_panic_mode/auto-disable and logs once) and record_success()/reset (resets the consecutive counter). Wire safe_execute to call record_error() on the Err/panic branch and record_success() on Ok, so repeated failures trip the breaker and disable tracing automatically.",
+    "Error isolation: audit the hot capture/explain paths in xplainit-core (pipeline.rs, processor.rs, collector.rs, sink.rs) for any unwrap()/expect()/panicking indexing that runs on the traced program's thread; replace with error-returning or defaulting logic so a malformed event cannot bring down the host. Route recoverable errors through record_error().",
+    "Framework-error telemetry + debug mode: add a lightweight telemetry counter set to RuntimeControl (e.g. total_errors, total_panics, times_tripped) with getter methods, and a debug flag (env XPLAINIT_DEBUG or config) that, when on, logs framework-internal errors to stderr with context; when off, framework errors are swallowed (never propagated to the host) after being counted.",
+    "Add revert-sensitive tests in control.rs and/or a new tests module: (a) safe_execute returns None and increments the error counter on a failing closure; (b) after N consecutive recorded errors the breaker trips (is_panic_mode()/disabled becomes true) and capture is disabled; (c) record_success resets the consecutive counter so the breaker does not trip prematurely; (d) telemetry counters reflect recorded errors/panics; (e) with debug off, a simulated framework error does not panic/propagate. Ensure each test fails if the breaker/telemetry logic is reverted.",
+    "Run the full gate set and the four Python suites. Commit on the branch: `feat: error recovery - circuit breaker, error isolation, telemetry (FEAT-002)`."
+  ],
+  "acceptance_criteria": [
+    "The panic=abort vs unwind decision is made explicitly and documented; safe_execute's guarantees match the chosen profile behavior (no false protection claims).",
+    "RuntimeControl has a working circuit-breaker that auto-disables tracing after a configurable number of consecutive errors, exercised by a test that trips it.",
+    "Hot capture/explain paths contain no unwrap/expect that can panic on malformed events on the host thread (recoverable errors are counted and swallowed unless debug mode is on).",
+    "Framework-error telemetry counters and a debug-mode toggle exist and are covered by tests.",
+    "Full gate set (build/test/clippy/fmt) passes and the four Python suites still pass.",
+    "Tests fail if the circuit-breaker or telemetry code is reverted."
+  ],
+  "verification": [
+    "cargo build --release",
+    "cargo test",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check",
+    "source .venv/bin/activate && python test_automatic_tracing.py && cd xplainit-python && maturin develop --release && python test_frame_filter.py && python test_depth_accounting.py && python test_decorators.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

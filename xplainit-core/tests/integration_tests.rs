@@ -156,3 +156,72 @@ fn create_variable_assign(name: &str, value: Value, file: &str, line: usize) -> 
         timestamp: Utc::now(),
     }
 }
+
+/// End-to-end: secret-like named values are redacted before they are
+/// serialized to JSON, while normal values survive unchanged. This test fails
+/// if the redaction path (`redact_events` / `ExecutionEvent::redacted`) is
+/// reverted.
+#[test]
+fn test_redaction_end_to_end_through_serialization() {
+    let config = Config::default();
+    assert!(config.redact_secrets, "redaction defaults to on");
+
+    // FunctionEnter carrying a secret argument and a normal argument.
+    let mut args = HashMap::new();
+    args.insert("password".to_string(), Value::String("hunter2".to_string()));
+    args.insert("count".to_string(), Value::Integer(42));
+    let enter = ExecutionEvent::FunctionEnter {
+        id: Uuid::new_v4(),
+        name: "login".to_string(),
+        args,
+        location: SourceLocation::new("auth.py".to_string(), 3, 0),
+        timestamp: Utc::now(),
+    };
+
+    // VariableAssign whose name is a secret.
+    let assign = create_variable_assign(
+        "api_key",
+        Value::String("sk-live-123".to_string()),
+        "auth.py",
+        7,
+    );
+
+    let events = vec![enter, assign];
+    let redacted = redact_events(&events, &config.redact_key_patterns);
+    let json = serde_json::to_string(&redacted).expect("serialize redacted events");
+
+    // Secret values must be gone, replaced by the placeholder.
+    assert!(!json.contains("hunter2"), "password value leaked: {json}");
+    assert!(
+        !json.contains("sk-live-123"),
+        "api_key value leaked: {json}"
+    );
+    assert!(json.contains(REDACTED_PLACEHOLDER));
+    // Normal values survive unchanged.
+    assert!(json.contains("42"), "normal count value was lost: {json}");
+
+    // The events must still round-trip as valid ExecutionEvents.
+    let decoded: Vec<ExecutionEvent> = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(decoded.len(), 2);
+}
+
+/// The path validator rejects hostile/nonsensical input and accepts a real
+/// file. Fails if `validate_input_path` is reverted.
+#[test]
+fn test_validate_input_path_integration() {
+    use std::io::Write;
+    use std::path::Path;
+
+    assert!(validate_input_path(Path::new("")).is_err());
+    assert!(validate_input_path(Path::new("/no/such/xplainit/file.json")).is_err());
+
+    let mut path = std::env::temp_dir();
+    path.push(format!("xplainit-itest-{}.json", std::process::id()));
+    {
+        let mut f = std::fs::File::create(&path).expect("create temp file");
+        writeln!(f, "[]").expect("write temp file");
+    }
+    let ok = validate_input_path(&path);
+    let _ = std::fs::remove_file(&path);
+    assert!(ok.is_ok());
+}

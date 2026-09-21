@@ -1,0 +1,32 @@
+{
+  "id": "FEAT-003",
+  "type": "refactor",
+  "description": "Task 4.3 Performance Optimization (HIGH). Reduce cloning and allocations on the hot event path, use references / Arc for shared data, and add pre-allocated buffers / interning where it measurably helps. Add a Rust benchmark harness (std-based, since cargo-flamegraph and criterion may be unavailable) and measure with the existing Python bench. Treat perf honestly: the known Python full-settrace overhead (~1200x) is inherent and the <10% target is not achievable for full tracing; optimize the hot paths that CAN be improved and report real numbers, not aspirational ones.",
+  "status": "pending",
+  "steps": [
+    "Profile qualitatively by reading the hot path: xplainit-core/src/pipeline.rs, processor.rs, collector.rs, event_store.rs, sink.rs, formatter.rs, events.rs. Identify concrete unnecessary clones/allocations (e.g. cloning HashMaps/Strings/Vec<Value> when a reference or Arc would do, per-event String formatting that could reuse a buffer, repeated allocation of small collections).",
+    "Apply targeted optimizations that preserve behavior: pass borrows instead of cloning where lifetimes allow; wrap large shared/read-only structures in Arc to avoid deep clones; use Cow or &str where owned Strings were allocated needlessly; pre-allocate Vec/String capacity in hot loops (Vec::with_capacity); consider string interning for repeated function/module names if it is a clear win. Only change internals; keep public APIs and serialized output identical. Do NOT introduce a new external crate for this (offline sandbox) unless it is already in Cargo.lock.",
+    "Evaluate lock-free/parallel event processing: assess whether the existing event store/pipeline can use crossbeam (already a workspace dependency) channels or atomics to reduce lock contention. Only implement if it is a real, test-covered improvement; if it adds risk without measured benefit, document the evaluation and decline in a findings note rather than adding speculative concurrency.",
+    "Add a benchmark harness that runs offline: create xplainit-core/benches/ (or a bin/example) that constructs a large volume of events and times pipeline processing using std::time::Instant (no criterion unless it is already resolvable from Cargo.lock). Report throughput (events/sec) before/after in a docs/PERFORMANCE.md, with the exact measurement method and hardware caveat. Use xplainit-python/bench_overhead.py to capture the Python-side overhead number and record it honestly (do not claim the <10% target is met for full tracing).",
+    "Add revert-sensitive tests where optimizations change observable-but-stable internals: assert equality of serialized event output before/after (a golden test proving the optimization did not change semantics), and where an Arc/borrow refactor touches a public-ish path, add a test that would fail if a regression reintroduced a clone-related bug (e.g. shared-state mutation semantics). The benchmark itself is not a correctness test; ensure real assertions cover the refactored code.",
+    "Run the full gate set and the four Python suites. Commit on the branch: `refactor: performance - reduce cloning/allocations, add bench harness (FEAT-003)`."
+  ],
+  "acceptance_criteria": [
+    "Concrete clone/allocation reductions are applied on the hot event path (Arc/borrow/Cow/with_capacity) without changing public APIs or serialized output.",
+    "A std-based offline benchmark harness exists and produces before/after throughput numbers recorded in docs/PERFORMANCE.md, with honest caveats (Python full-tracing overhead reported as-is, <10% target explicitly noted as not achievable for full tracing).",
+    "Any parallel/lock-free change is test-covered and measured, or explicitly declined with a documented rationale (no speculative concurrency).",
+    "Serialized event output is byte-for-byte unchanged (golden test) after the refactor.",
+    "Full gate set (build/test/clippy/fmt) passes and the four Python suites still pass.",
+    "Tests fail if a semantic-preserving optimization is reverted in a way that breaks output equality."
+  ],
+  "verification": [
+    "cargo build --release",
+    "cargo test",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check",
+    "cargo bench 2>&1 | head -40  (or run the example bench binary) to confirm the harness runs",
+    "source .venv/bin/activate && python test_automatic_tracing.py && cd xplainit-python && python bench_overhead.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

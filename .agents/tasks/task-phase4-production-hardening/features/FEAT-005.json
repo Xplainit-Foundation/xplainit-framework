@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-005",
+  "type": "docs",
+  "description": "Task 4.5 Documentation Completion (HIGH). Make cargo doc --all --no-deps build with ZERO warnings, ship a plain-Markdown user guide under docs/ (mdbook is unavailable offline), and add reference docs for events/config/filtering/async. Correct remaining inaccurate status markdown so the repo's docs reflect true state.",
+  "status": "pending",
+  "steps": [
+    "API docs: run cargo doc --all --no-deps and treat any doc warning as an error to fix. Add missing crate-level (//!) and item-level (///) doc comments on public items across xplainit-core and the binding/CLI/dashboard crates so the generated docs are complete. Confirm the build is warning-free (it is currently clean; keep it clean while adding docs). Optionally add #![warn(missing_docs)] to xplainit-core to enforce going forward (only if it can be satisfied without churn that breaks the build).",
+    "User guide as Markdown under docs/ (mdbook UNAVAILABLE offline - do NOT try to install or run it): create docs/guide/ with the structure from the plan adapted to plain Markdown: intro.md, getting-started (installation.md, quickstart.md, concepts.md), guides per language (python.md, javascript.md, c-cpp.md, java.md, go.md), advanced (filtering.md, custom-processors.md, performance-tuning.md, async-tracing.md). Content must be accurate to the ACTUAL current capabilities (e.g. reflect the honest CLI 'run' live-tracing limitation and the Python overhead reality). Add docs/guide/README.md as an index and note that an mdbook build is blocked offline with the command to build it when tooling is available.",
+    "Reference docs: add docs/reference/events.md (document the ExecutionEvent variants and the Value enum from events.rs), configuration.md (document Config fields including the new redaction settings from FEAT-001 and error-recovery settings from FEAT-002), filtering.md (document filter.rs and advanced_filter.rs behavior), and async.md (document async_tracker.rs). Ground every statement in the actual source.",
+    "Correct inaccurate status docs: review the repo-root *_COMPLETE.md / status markdown files that historically overstated status. Update or clearly annotate them (or add a docs/STATUS.md single source of truth) so they reflect the true Phase 4 state: what is done, what is blocked by the offline sandbox (cargo audit, tarpaulin, cargo-fuzz, mdbook, flamegraph), and the honest performance numbers. Do not delete history wholesale; correct claims that are false.",
+    "Update CHANGELOG.md with a v0.4.0 Phase 4 entry summarizing security hardening, error recovery, performance work, extensive testing, and documentation, including the honest 'blocked offline' notes.",
+    "Run the full gate set plus cargo doc --all --no-deps (must be warning-free) and the four Python suites. Commit on the branch: `docs: API docs, user guide, reference docs, status corrections (FEAT-005)`."
+  ],
+  "acceptance_criteria": [
+    "cargo doc --all --no-deps builds with zero warnings and public items across crates are documented.",
+    "docs/guide/ contains an accurate plain-Markdown user guide covering getting-started, per-language guides, and advanced topics, with a note that mdbook is blocked offline and how to build it when available.",
+    "docs/reference/ documents events, configuration (including redaction + error-recovery settings), filtering, and async, grounded in the actual source.",
+    "Inaccurate status markdown is corrected (or a docs/STATUS.md single source of truth added) to reflect true Phase 4 state and offline-blocked tooling; CHANGELOG.md has a v0.4.0 entry.",
+    "Full gate set (build/test/clippy/fmt) passes, cargo doc is warning-free, and the four Python suites still pass."
+  ],
+  "verification": [
+    "cargo doc --all --no-deps 2>&1 | grep -i warning ; echo done  (expect no warning lines)",
+    "cargo build --release",
+    "cargo test",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check",
+    "source .venv/bin/activate && python test_automatic_tracing.py && cd xplainit-python && maturin develop --release && python test_frame_filter.py && python test_depth_accounting.py && python test_decorators.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

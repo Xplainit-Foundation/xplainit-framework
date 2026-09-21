@@ -1,0 +1,34 @@
+{
+  "id": "FEAT-004",
+  "type": "test",
+  "description": "Task 4.4 Extensive Testing (CRITICAL). Substantially raise test coverage across xplainit-core and the CLI/dashboard with unit, integration, edge-case, hand-rolled property-style, and in-process load tests. proptest/quickcheck and cargo-fuzz/tarpaulin are UNAVAILABLE offline, so property testing is hand-rolled and coverage is reported qualitatively (tool-unavailable). Every new test must fail if the code under test is reverted. NOTE: FEAT-004 uses type 'test'; if the repo's commit lint only allows feat/chore/docs/fix/refactor, commit it as 'test:'-style message but the task type here documents intent.",
+  "status": "pending",
+  "steps": [
+    "Inventory current coverage qualitatively: list modules in xplainit-core/src with thin or no tests (e.g. explainer.rs, error_explainer.rs, advanced_filter.rs, ast.rs, async_tracker.rs, formatter.rs, sink.rs, event_store.rs) and the security/error-recovery/redaction code added in FEAT-001/002. Do NOT run cargo tarpaulin (unavailable); state coverage is measured qualitatively.",
+    "Add unit + edge-case tests for under-tested core modules: empty inputs, deeply nested/large structures, malformed events, boundary depths (0 and max_depth), unicode/long strings, and error branches. Focus on real behavior assertions, not static constants or fully-mocked logic.",
+    "Add hand-rolled property-style tests (no proptest crate): write loops over pseudo-random or systematically generated inputs (using std, e.g. a simple LCG or fixed seed table) to assert invariants such as: serialize->deserialize round-trips an ExecutionEvent to an equal value; redaction is idempotent; filter inclusion/exclusion is consistent; the pipeline never panics on generated event streams. Keep runs deterministic and fast.",
+    "Add integration tests: extend xplainit-core/tests and xplainit-cli/tests to cover realistic end-to-end flows (load a trace JSON -> analyze/report -> assert output; dashboard analysis functions over a representative event set). Reuse the fixture/style patterns already in xplainit-core/tests/integration_tests.rs and xplainit-cli/tests/cli.rs.",
+    "Add an in-process load test (feasible offline; the plan's '1M events/sec, 10K concurrent, multi-hour' is not literally run here): feed a large event volume (e.g. hundreds of thousands of events) through the pipeline/event_store in a #[test] or #[ignore]-gated heavy test and assert it completes without error/leak and within a sane time budget, asserting throughput stays finite and stable. Document the scaled-down nature honestly in a comment.",
+    "Document fuzzing status: since cargo-fuzz is unavailable offline, add the hand-rolled generative tests above as the substitute and note in docs/TESTING.md that cargo-fuzz-based fuzzing is blocked offline, with the exact commands to run it when tooling is available. Do not fabricate fuzz results.",
+    "Run the full gate set and the four Python suites; ensure the new test count is meaningfully higher than the 178 baseline and all pass. Commit on the branch: `test: extensive unit/property/integration/load tests (FEAT-004)`."
+  ],
+  "acceptance_criteria": [
+    "Test count is substantially higher than the 178 baseline, with 0 failures, and new tests target previously thin modules and the FEAT-001/002/003 additions.",
+    "Hand-rolled property-style tests exist (round-trip, redaction idempotence, filter consistency, pipeline no-panic) and are deterministic; no proptest/quickcheck dependency was added.",
+    "New integration tests exercise realistic load->analyze/report->assert flows in core and CLI.",
+    "An in-process load test drives a large event volume through the pipeline and asserts stable, error-free completion, with an honest comment about scaled-down scope.",
+    "docs/TESTING.md documents the coverage approach and states that tarpaulin coverage measurement and cargo-fuzz fuzzing are blocked offline, with commands to run them when available (no fabricated numbers).",
+    "Full gate set (build/test/clippy/fmt) passes and the four Python suites still pass.",
+    "Each new test fails if the specific code path it covers is reverted."
+  ],
+  "verification": [
+    "cargo build --release",
+    "cargo test  (confirm count > 178, 0 failures)",
+    "cargo test -- --ignored  (run any heavy/load tests gated behind --ignored, if used)",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check",
+    "source .venv/bin/activate && python test_automatic_tracing.py && cd xplainit-python && maturin develop --release && python test_frame_filter.py && python test_depth_accounting.py && python test_decorators.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

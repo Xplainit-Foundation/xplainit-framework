@@ -40,6 +40,7 @@ pub mod formatter;
 pub mod pipeline;
 pub mod processor;
 pub mod runtime;
+pub mod security;
 pub mod sink;
 
 // Re-export commonly used types
@@ -56,7 +57,9 @@ pub use control::{safe_execute, RuntimeControl, ScopedControl};
 pub use error::{Result, XplainitError};
 pub use error_explainer::{ErrorAnalysis, ErrorCategory, ErrorExplainer, ErrorSeverity};
 pub use event_store::{EventStats, EventStore};
-pub use events::{ExecutionEvent, LoopExitReason, SourceLocation, StackFrame, Value};
+pub use events::{
+    redact_events, ExecutionEvent, LoopExitReason, SourceLocation, StackFrame, Value,
+};
 pub use explainer::{ExplanationGenerator, VerbosityLevel};
 pub use filter::{
     AcceptAllFilter, CompositeFilter, DepthFilter, EventFilter, EventTypeFilter, FrequencyFilter,
@@ -72,6 +75,10 @@ pub use processor::{
     ProcessorPipeline, RateLimitProcessor,
 };
 pub use runtime::{EngineState, RuntimeEngine};
+pub use security::{
+    is_redaction_key, redact_named_value, validate_input_path, DEFAULT_REDACTION_PATTERNS,
+    REDACTED_PLACEHOLDER,
+};
 pub use sink::{ConsoleSink, EventSink, FileSink, MemorySink, MultiSink};
 
 use parking_lot::RwLock;

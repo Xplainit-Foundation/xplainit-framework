@@ -31,6 +31,11 @@ unsafe fn cstr_to_string(ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
     }
+    // SAFETY: `ptr` was checked non-null immediately above. The function
+    // contract requires the caller to pass either null or a valid,
+    // null-terminated C string, so constructing a `CStr` from it is sound.
+    // Non-UTF-8 content is handled by `to_str().ok()` returning `None` rather
+    // than being assumed valid.
     CStr::from_ptr(ptr).to_str().ok().map(|s| s.to_string())
 }
 
@@ -65,6 +70,10 @@ pub extern "C" fn xplainit_create() -> *mut XplainitHandle {
 #[no_mangle]
 pub unsafe extern "C" fn xplainit_free(handle: *mut XplainitHandle) {
     if !handle.is_null() {
+        // SAFETY: `handle` is non-null (checked above) and, per contract, was
+        // produced by `Box::into_raw` in `xplainit_create` and not yet freed.
+        // Reconstructing the `Box` here takes ownership and drops it exactly
+        // once; callers must not use the pointer afterwards.
         let _ = Box::from_raw(handle);
     }
 }
@@ -85,6 +94,10 @@ pub unsafe extern "C" fn xplainit_enable(handle: *mut XplainitHandle) -> i32 {
         return 0;
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle` from `xplainit_create`. We only take a shared
+    // reference and touch the atomic `enabled` flag, so no aliasing rules are
+    // violated even under concurrent FFI calls.
     let handle = &*handle;
     handle.enabled.store(true, Ordering::SeqCst);
     1
@@ -106,6 +119,9 @@ pub unsafe extern "C" fn xplainit_disable(handle: *mut XplainitHandle) -> i32 {
         return 0;
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle` from `xplainit_create`. Only a shared reference to
+    // the atomic `enabled` flag is taken, which is sound under concurrent calls.
     let handle = &*handle;
     handle.enabled.store(false, Ordering::SeqCst);
     1
@@ -127,6 +143,9 @@ pub unsafe extern "C" fn xplainit_is_enabled(handle: *mut XplainitHandle) -> i32
         return 0;
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle`. Only the atomic `enabled` flag is read through a
+    // shared reference, which is sound.
     let handle = &*handle;
     if handle.enabled.load(Ordering::SeqCst) {
         1
@@ -152,6 +171,9 @@ pub unsafe extern "C" fn xplainit_get_events(handle: *mut XplainitHandle) -> *mu
         return ptr::null_mut();
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle`. A shared reference is taken and the `Mutex`
+    // guards concurrent access to the runtime.
     let handle = &*handle;
     let runtime = handle.runtime.lock().unwrap();
     let events = runtime.get_events();
@@ -159,6 +181,8 @@ pub unsafe extern "C" fn xplainit_get_events(handle: *mut XplainitHandle) -> *mu
     let json = serde_json::to_string(&events).unwrap_or_else(|_| "[]".to_string());
 
     match CString::new(json) {
+        // Ownership of the buffer is transferred to the caller, who must free it
+        // with `xplainit_free_string`.
         Ok(c_str) => c_str.into_raw(),
         Err(_) => ptr::null_mut(),
     }
@@ -180,6 +204,9 @@ pub unsafe extern "C" fn xplainit_clear_events(handle: *mut XplainitHandle) -> i
         return 0;
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle`. A shared reference is taken and the `Mutex`
+    // guards concurrent access to the runtime.
     let handle = &*handle;
     let runtime = handle.runtime.lock().unwrap();
     runtime.clear_events();
@@ -212,6 +239,9 @@ pub unsafe extern "C" fn xplainit_get_statistics(
         return 0;
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle`. A shared reference is taken and the `Mutex`
+    // guards concurrent access to the runtime.
     let handle = &*handle;
     let runtime = handle.runtime.lock().unwrap();
     let events = runtime.get_events();
@@ -231,6 +261,9 @@ pub unsafe extern "C" fn xplainit_get_statistics(
         }
     }
 
+    // SAFETY: each output pointer is written only after an explicit null check,
+    // so we never dereference null. Per contract, any non-null output pointer
+    // points to a writable `usize` supplied by the caller.
     if !total_events.is_null() {
         *total_events = total;
     }
@@ -269,6 +302,10 @@ pub unsafe extern "C" fn xplainit_on_function_enter(
         return 0;
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle`. A shared reference is taken; the `Mutex` guards
+    // the runtime. The `name`/`file` pointers are only dereferenced inside
+    // `cstr_to_string`, which null-checks them.
     let handle = &*handle;
     if !handle.enabled.load(Ordering::SeqCst) {
         return 0;
@@ -316,6 +353,10 @@ pub unsafe extern "C" fn xplainit_on_function_exit(
         return 0;
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle`. A shared reference is taken; the `Mutex` guards
+    // the runtime. The `name`/`file` pointers are only dereferenced inside
+    // `cstr_to_string`, which null-checks them.
     let handle = &*handle;
     if !handle.enabled.load(Ordering::SeqCst) {
         return 0;
@@ -367,6 +408,10 @@ pub unsafe extern "C" fn xplainit_on_exception(
         return 0;
     }
 
+    // SAFETY: `handle` is non-null (checked above) and, per contract, points to
+    // a live `XplainitHandle`. A shared reference is taken; the `Mutex` guards
+    // the runtime. The string pointers are only dereferenced inside
+    // `cstr_to_string`, which null-checks them.
     let handle = &*handle;
     if !handle.enabled.load(Ordering::SeqCst) {
         return 0;
@@ -400,6 +445,10 @@ pub unsafe extern "C" fn xplainit_on_exception(
 #[no_mangle]
 pub unsafe extern "C" fn xplainit_free_string(s: *mut c_char) {
     if !s.is_null() {
+        // SAFETY: `s` is non-null (checked above) and, per contract, was
+        // produced by `CString::into_raw` in `xplainit_get_events` and not yet
+        // freed. Reconstructing the `CString` reclaims and drops it exactly
+        // once; the caller must not use the pointer afterwards.
         let _ = CString::from_raw(s);
     }
 }
@@ -608,6 +657,40 @@ mod tests {
             assert_eq!(total, 0);
 
             xplainit_free(handle);
+        }
+    }
+
+    #[test]
+    fn test_null_handle_statistics_returns_safe_error() {
+        unsafe {
+            // A null handle must take the guarded error path (return 0) instead
+            // of dereferencing the pointer. Out-pointers are also null here to
+            // confirm the null-checked writes never fire.
+            let result = xplainit_get_statistics(
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            );
+            assert_eq!(result, 0);
+
+            // Non-null handle with null out-pointers must still be safe.
+            let handle = xplainit_create();
+            let result =
+                xplainit_get_statistics(handle, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
+            assert_eq!(result, 1);
+            xplainit_free(handle);
+        }
+    }
+
+    #[test]
+    fn test_null_handle_enable_disable_returns_safe_error() {
+        unsafe {
+            assert_eq!(xplainit_enable(ptr::null_mut()), 0);
+            assert_eq!(xplainit_disable(ptr::null_mut()), 0);
+            assert_eq!(xplainit_is_enabled(ptr::null_mut()), 0);
+            assert_eq!(xplainit_clear_events(ptr::null_mut()), 0);
+            assert!(xplainit_get_events(ptr::null_mut()).is_null());
         }
     }
 
