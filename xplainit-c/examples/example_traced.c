@@ -1,19 +1,22 @@
 /**
- * Example: C Program with Automatic Tracing
- * 
- * Compile with:
- *   gcc -finstrument-functions -rdynamic -DXPLAINIT_DEBUG=1 \
- *       example_traced.c ../lib/trace.c -lpthread -o example_traced
- * 
- * Run with:
- *   XPLAINIT_DEBUG=1 ./example_traced
+ * Example: C Program with Automatic Tracing via -finstrument-functions
+ *
+ * Every function in this file is compiled with -finstrument-functions, so
+ * GCC/Clang inserts calls to __cyg_profile_func_enter/exit (implemented in
+ * ../lib/trace.c) which resolve the function address to a name via dladdr()
+ * and forward it to the Xplainit C FFI recording functions.
+ *
+ * Build and run via examples/build.sh (which also asserts real captured
+ * events). See that script for the exact compile/link flags.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 
-// Simple functions to trace
+#include "trace.h"
+#include "xplainit-c.h"
+
+/* Simple function to trace. */
 int add(int a, int b) {
     return a + b;
 }
@@ -22,7 +25,7 @@ int multiply(int x, int y) {
     return x * y;
 }
 
-// Recursive function
+/* Recursive function. */
 int factorial(int n) {
     if (n <= 1) {
         return 1;
@@ -30,59 +33,70 @@ int factorial(int n) {
     return n * factorial(n - 1);
 }
 
-// Function with loops
-void process_array(int* arr, int size) {
-    for (int i = 0; i < size; i++) {
-        arr[i] = arr[i] * 2;
-    }
-}
-
-// Nested function calls
+/* Nested function calls. */
 int calculate_something(int a, int b, int c) {
     int sum = add(a, b);
     int product = multiply(sum, c);
     return product;
 }
 
-int main() {
-    printf("=================================================================\n");
-    printf("Xplainit C/C++ Automatic Tracing Example\n");
-    printf("=================================================================\n\n");
-    
-    printf("Running traced functions...\n\n");
-    
-    // Test 1: Simple function
-    printf("Test 1: add(5, 3)\n");
-    int result1 = add(5, 3);
-    printf("Result: %d\n\n", result1);
-    
-    // Test 2: Nested calls
-    printf("Test 2: calculate_something(10, 20, 3)\n");
-    int result2 = calculate_something(10, 20, 3);
-    printf("Result: %d\n\n", result2);
-    
-    // Test 3: Recursive function
-    printf("Test 3: factorial(5)\n");
-    int result3 = factorial(5);
-    printf("Result: %d\n\n", result3);
-    
-    // Test 4: Array processing
-    printf("Test 4: process_array\n");
-    int arr[] = {1, 2, 3, 4, 5};
-    process_array(arr, 5);
-    printf("Result: [");
-    for (int i = 0; i < 5; i++) {
-        printf("%d%s", arr[i], i < 4 ? ", " : "");
+/* Error path: reports an exception to the tracer when dividing by zero. */
+int safe_divide(int numerator, int denominator) {
+    if (denominator == 0) {
+        xplainit_instrument_report_exception(
+            "DivisionByZero", "attempted to divide by zero", __FILE__, __LINE__);
+        return 0;
     }
-    printf("]\n\n");
-    
+    return numerator / denominator;
+}
+
+int main(void) {
     printf("=================================================================\n");
-    printf("Tracing complete!\n");
+    printf("Xplainit C Automatic Tracing Example (-finstrument-functions)\n");
     printf("=================================================================\n\n");
-    
-    printf("Check stderr for trace output (with XPLAINIT_DEBUG=1)\n");
-    printf("\nAll function entries and exits were automatically traced!\n");
-    printf("No manual instrumentation required!\n\n");
-    
+
+    if (!xplainit_instrument_init()) {
+        fprintf(stderr, "ERROR: failed to initialize Xplainit tracer\n");
+        return 1;
+    }
+
+    printf("Test 1: add(5, 3)\n");
+    printf("Result: %d\n\n", add(5, 3));
+
+    printf("Test 2: calculate_something(10, 20, 3)\n");
+    printf("Result: %d\n\n", calculate_something(10, 20, 3));
+
+    printf("Test 3: factorial(5)\n");
+    printf("Result: %d\n\n", factorial(5));
+
+    printf("Test 4: safe_divide(10, 0) (error path)\n");
+    printf("Result: %d\n\n", safe_divide(10, 0));
+
+    /* Dump the raw events JSON FIRST. Both get_events and get_statistics DRAIN
+     * the event store, so we fetch the JSON (which contains every traced
+     * function name and the recorded exception) before anything consumes it. */
+    char *events_json = xplainit_instrument_get_events();
+    if (events_json != NULL) {
+        printf("EVENTS_JSON_BEGIN\n%s\nEVENTS_JSON_END\n", events_json);
+        xplainit_free_string(events_json);
+    }
+
+    /* Re-run a representative subset of the traced calls so that the store is
+     * repopulated and get_statistics can report a non-zero, verifiable count. */
+    (void)add(1, 2);
+    (void)calculate_something(2, 3, 4);
+    (void)factorial(4);
+
+    unsigned long total = 0, functions = 0, errors = 0;
+    xplainit_instrument_get_statistics(&total, &functions, &errors);
+
+    printf("=================================================================\n");
+    printf("Captured events summary (second batch):\n");
+    printf("  total_events   = %lu\n", total);
+    printf("  function_calls = %lu\n", functions);
+    printf("  errors         = %lu\n", errors);
+    printf("=================================================================\n\n");
+
+    xplainit_instrument_shutdown();
     return 0;
 }

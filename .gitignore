@@ -72,3 +72,9 @@ Thumbs.db
 # Documentation build
 /target/doc/
 .venv/
+
+# Xplainit C instrumentation shim (source, must be tracked despite lib/ rule above)
+!xplainit-c/lib/
+!xplainit-c/lib/**
+# Built example binary produced by xplainit-c/examples/build.sh
+xplainit-c/examples/example_traced

@@ -138,6 +138,71 @@ int32_t xplainit_get_statistics(struct XplainitHandle *handle,
                                 uintptr_t *errors);
 
 /*
+ Record a function entry event
+
+ # Arguments
+ * `handle` - Valid XplainitHandle pointer
+ * `name` - Function name (null-terminated C string, may be null)
+ * `file` - Source file (null-terminated C string, may be null)
+ * `line` - Source line number
+
+ # Returns
+ 1 if the event was recorded, 0 otherwise (null handle or tracing disabled)
+
+ # Safety
+ The handle must be a valid pointer returned from xplainit_create().
+ `name` and `file`, if not null, must point to valid null-terminated C strings.
+ */
+int32_t xplainit_on_function_enter(struct XplainitHandle *handle,
+                                   const char *name,
+                                   const char *file,
+                                   uint32_t line);
+
+/*
+ Record a function exit event
+
+ # Arguments
+ * `handle` - Valid XplainitHandle pointer
+ * `name` - Function name (null-terminated C string, may be null)
+ * `file` - Source file (null-terminated C string, may be null)
+ * `line` - Source line number
+
+ # Returns
+ 1 if the event was recorded, 0 otherwise (null handle or tracing disabled)
+
+ # Safety
+ The handle must be a valid pointer returned from xplainit_create().
+ `name` and `file`, if not null, must point to valid null-terminated C strings.
+ */
+int32_t xplainit_on_function_exit(struct XplainitHandle *handle,
+                                  const char *name,
+                                  const char *file,
+                                  uint32_t line);
+
+/*
+ Record an exception event
+
+ # Arguments
+ * `handle` - Valid XplainitHandle pointer
+ * `error_type` - Exception type (null-terminated C string, may be null)
+ * `message` - Exception message (null-terminated C string, may be null)
+ * `file` - Source file (null-terminated C string, may be null)
+ * `line` - Source line number
+
+ # Returns
+ 1 if the event was recorded, 0 otherwise (null handle or tracing disabled)
+
+ # Safety
+ The handle must be a valid pointer returned from xplainit_create().
+ The string arguments, if not null, must point to valid null-terminated C strings.
+ */
+int32_t xplainit_on_exception(struct XplainitHandle *handle,
+                              const char *error_type,
+                              const char *message,
+                              const char *file,
+                              uint32_t line);
+
+/*
  Free a string returned by xplainit_get_events()
 
  # Safety
