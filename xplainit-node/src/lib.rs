@@ -6,7 +6,6 @@
 use neon::prelude::*;
 use xplainit_core::*;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 use std::time::Duration;
 use chrono::Utc;
 use uuid::Uuid;

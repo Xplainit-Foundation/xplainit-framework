@@ -225,7 +225,7 @@ mod tests {
         assert_eq!(parse_python_value("True"), Value::Bool(true));
         assert_eq!(parse_python_value("False"), Value::Bool(false));
         assert_eq!(parse_python_value("42"), Value::Integer(42));
-        assert_eq!(parse_python_value("3.14"), Value::Float(3.14));
+        assert_eq!(parse_python_value("2.5"), Value::Float(2.5));
         assert_eq!(parse_python_value("'hello'"), Value::String("hello".to_string()));
         assert_eq!(parse_python_value("\"world\""), Value::String("world".to_string()));
     }
@@ -247,5 +247,61 @@ mod tests {
         assert!(tracer.is_enabled());
         tracer.disable();
         assert!(!tracer.is_enabled());
+    }
+    
+    #[test]
+    fn test_record_events_flow_through_to_store() {
+        // Exercise the real recording code path: an enabled tracer should
+        // record a FunctionEnter and FunctionExit into the event store and
+        // surface them through get_events_json()/get_stats(). This test would
+        // fail if record_function_enter/exit stopped persisting events.
+        let config = Config::new(Language::Python);
+        let mut tracer = PythonTracer::new(config, true);
+        
+        // Nothing recorded yet.
+        assert_eq!(tracer.get_events_json(), "[]");
+        assert!(tracer.get_stats().contains("Events captured: 0"));
+        
+        let mut args = HashMap::new();
+        args.insert("a".to_string(), Value::Integer(5));
+        args.insert("b".to_string(), Value::Integer(3));
+        tracer.record_function_enter("add".to_string(), args, "test.py".to_string(), 10);
+        tracer.record_function_exit(
+            "add".to_string(),
+            Some(Value::Integer(8)),
+            "test.py".to_string(),
+            12,
+        );
+        
+        // Both events must be reflected by the store-backed accessors.
+        let events_json = tracer.get_events_json();
+        assert_ne!(events_json, "[]");
+        assert!(events_json.contains("add"));
+        
+        let events = serde_json::from_str::<serde_json::Value>(&events_json)
+            .expect("events JSON should parse");
+        let count = events.as_array().map(|a| a.len()).unwrap_or(0);
+        assert!(count > 0, "expected recorded events, got {}", count);
+        assert_eq!(count, 2, "expected exactly one enter + one exit event");
+        
+        assert!(tracer.get_stats().contains("Events captured: 2"));
+    }
+    
+    #[test]
+    fn test_disabled_tracer_records_nothing() {
+        // Complements the recording test: a disabled tracer must NOT record,
+        // proving the recorded events above come from the real code path.
+        let config = Config::new(Language::Python);
+        let mut tracer = PythonTracer::new(config, false);
+        
+        tracer.record_function_enter(
+            "add".to_string(),
+            HashMap::new(),
+            "test.py".to_string(),
+            10,
+        );
+        
+        assert_eq!(tracer.get_events_json(), "[]");
+        assert!(tracer.get_stats().contains("Events captured: 0"));
     }
 }

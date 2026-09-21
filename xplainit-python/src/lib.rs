@@ -1,6 +1,12 @@
 //! Python bindings for Xplainit Framework
 //! Provides sys.settrace() integration for runtime code explanation
 
+// The pyo3 `#[pymethods]`/`#[pyfunction]` macros generate wrapper code that
+// converts the returned `PyResult` error type via `.into()`, which clippy
+// flags as `useless_conversion` (PyErr -> PyErr). The conversion lives in
+// generated code we do not control, so silence the lint crate-wide.
+#![allow(clippy::useless_conversion)]
+
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use xplainit_core::*;
@@ -93,11 +99,13 @@ impl Xplainit {
     }
     
     /// Get explanations for all captured events
+    #[pyo3(signature = (verbosity=None))]
     fn get_explanations(&self, verbosity: Option<&str>) -> String {
         self.tracer.read().get_explanations(verbosity)
     }
     
     /// Print explanations in real-time to console
+    #[pyo3(signature = (verbosity=None))]
     fn print_explanations(&self, verbosity: Option<&str>) {
         let verb = verbosity.unwrap_or("normal");
         let explanations = self.tracer.read().get_explanations(Some(verb));
@@ -275,8 +283,8 @@ struct AutoTracer {
 #[pymethods]
 impl AutoTracer {
     #[new]
-    #[pyo3(signature = (backend=None))]
-    fn new(backend: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+    #[pyo3(signature = (_backend=None))]
+    fn new(_backend: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let xplainit = Xplainit::new(true, "normal", "stdout")?;
         
         Ok(Self {

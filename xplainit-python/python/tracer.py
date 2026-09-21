@@ -174,6 +174,26 @@ class AutoTracer:
         self._active = False
         sys.settrace(self._previous_trace)
         self._previous_trace = None
+
+    # Convenience aliases so callers can use enable()/disable() interchangeably
+    # with start()/stop() (matches the Rust Xplainit/AutoTracer API).
+    def enable(self):
+        """Alias for start()."""
+        self.start()
+
+    def disable(self):
+        """Alias for stop()."""
+        self.stop()
+
+    def __enter__(self):
+        """Context-manager entry: start tracing and return self."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Context-manager exit: stop tracing. Do not suppress exceptions."""
+        self.stop()
+        return False
         
     def _get_depth(self) -> int:
         """Get current call depth for this thread."""
@@ -563,4 +583,11 @@ def disable_tracing():
 _global_tracer: Optional[AutoTracer] = None
 
 
-__all__ = ['AutoTracer', 'enable_tracing', 'disable_tracing']
+# Backwards-compatible alias. The package __init__ exposes AutoTracer as
+# XplainitTracer; expose the same name here so `from python.tracer import
+# XplainitTracer` (and `from xplainit.python.tracer import XplainitTracer`)
+# resolve to the same class.
+XplainitTracer = AutoTracer
+
+
+__all__ = ['AutoTracer', 'XplainitTracer', 'enable_tracing', 'disable_tracing']
