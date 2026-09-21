@@ -168,22 +168,120 @@ impl AstParser {
     }
     
     /// Get function name containing a location
+    ///
+    /// Walks the retained tree-sitter `Tree` directly: descends to the smallest
+    /// node containing `location`, then walks upward via `node.parent()` until a
+    /// function-like node for the current grammar is found, and reads its name.
+    /// Returns `None` when the location is not inside any function/method.
     pub fn get_containing_function(&self, location: &SourceLocation) -> Option<String> {
-        let node = self.find_node_at(location)?;
-        
-        // Walk up to find function definition
-        self.find_function_in_hierarchy(&node)
-    }
-    
-    fn find_function_in_hierarchy(&self, node: &AstNode) -> Option<String> {
-        // Check if this node is a function
-        if node.kind.contains("function") || node.kind.contains("method") {
-            return node.metadata.get("name").cloned();
+        let tree = self.tree.as_ref()?;
+        let source = self.source_code.as_ref()?;
+
+        // Descend to the smallest named-or-unnamed node containing the location.
+        let root = tree.root_node();
+        let mut node = Self::smallest_node_at(root, location)?;
+
+        // Walk up until we hit a named function-like node. Anonymous functions
+        // (e.g. JS arrow functions / function expressions with no name) are
+        // skipped so we resolve to the nearest *named* enclosing function.
+        loop {
+            if Self::is_function_node(&node) {
+                if let Some(name) = Self::function_name(&node, source) {
+                    return Some(name);
+                }
+            }
+            match node.parent() {
+                Some(parent) => node = parent,
+                None => return None,
+            }
         }
-        
-        // For now, we don't track parents, so we search the tree
-        // This is a simplified version - a production implementation would maintain parent links
+    }
+
+    /// Find the smallest tree-sitter node whose byte/line range contains the
+    /// given location.
+    fn smallest_node_at<'a>(node: Node<'a>, location: &SourceLocation) -> Option<Node<'a>> {
+        // The location must fall within this node's line range.
+        let start_line = node.start_position().row;
+        let end_line = node.end_position().row;
+        if location.line < start_line || location.line > end_line {
+            return None;
+        }
+
+        // Prefer the most specific matching child.
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if let Some(found) = Self::smallest_node_at(child, location) {
+                return Some(found);
+            }
+        }
+
+        Some(node)
+    }
+
+    /// Whether a tree-sitter node represents a function/method definition for one
+    /// of the supported grammars.
+    fn is_function_node(node: &Node) -> bool {
+        matches!(
+            node.kind(),
+            // Python
+            "function_definition"
+            // JavaScript / TypeScript
+            | "function_declaration"
+            | "function"
+            | "function_expression"
+            | "method_definition"
+            | "generator_function"
+            | "generator_function_declaration"
+            | "arrow_function"
+            // Rust
+            | "function_item"
+            // C / C++ share "function_definition"
+        )
+    }
+
+    /// Extract the name of a function-like node. Handles the field-based grammars
+    /// (Python/JS/Rust) directly and descends declarators for C/C++.
+    fn function_name(node: &Node, source: &str) -> Option<String> {
+        // Most grammars expose a "name" field directly.
+        if let Some(name_node) = node.child_by_field_name("name") {
+            if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
+                return Some(name.to_string());
+            }
+        }
+
+        // C/C++: the function name is nested inside the "declarator" field,
+        // e.g. function_definition -> function_declarator -> identifier.
+        if let Some(declarator) = node.child_by_field_name("declarator") {
+            if let Some(name) = Self::name_from_declarator(&declarator, source) {
+                return Some(name);
+            }
+        }
+
         None
+    }
+
+    /// Recursively descend a C/C++ declarator to find the function identifier.
+    fn name_from_declarator(node: &Node, source: &str) -> Option<String> {
+        match node.kind() {
+            "identifier" | "field_identifier" | "type_identifier" => {
+                node.utf8_text(source.as_bytes()).ok().map(|s| s.to_string())
+            }
+            _ => {
+                // function_declarator / pointer_declarator / parenthesized_declarator
+                // all nest the real declarator in the "declarator" field.
+                if let Some(inner) = node.child_by_field_name("declarator") {
+                    return Self::name_from_declarator(&inner, source);
+                }
+                // Fall back to scanning children for a nested declarator/identifier.
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if let Some(name) = Self::name_from_declarator(&child, source) {
+                        return Some(name);
+                    }
+                }
+                None
+            }
+        }
     }
 }
 
@@ -266,5 +364,102 @@ mod tests {
         
         let context = parser.get_context(&location, 1, 1);
         assert!(context.is_some());
+    }
+
+    fn loc(line: usize) -> SourceLocation {
+        SourceLocation {
+            file: "test".into(),
+            // Tree-sitter uses 0-based rows.
+            line,
+            column: 0,
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn test_get_containing_function_python() {
+        let mut parser = AstParser::new(Language::Python);
+        // Line 0: `def foo():`
+        // Line 1: `    x = 1`
+        parser.parse("def foo():\n    x = 1".to_string()).unwrap();
+
+        assert_eq!(
+            parser.get_containing_function(&loc(1)),
+            Some("foo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_containing_function_javascript() {
+        let mut parser = AstParser::new(Language::JavaScript);
+        // Line 0: `function bar() {`
+        // Line 1: `  var y = 2;`
+        // Line 2: `}`
+        parser
+            .parse("function bar() {\n  var y = 2;\n}".to_string())
+            .unwrap();
+
+        assert_eq!(
+            parser.get_containing_function(&loc(1)),
+            Some("bar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_containing_function_javascript_method() {
+        let mut parser = AstParser::new(Language::JavaScript);
+        // A method inside a class should resolve to the method name.
+        let source = "class C {\n  greet() {\n    return 1;\n  }\n}".to_string();
+        parser.parse(source).unwrap();
+
+        assert_eq!(
+            parser.get_containing_function(&loc(2)),
+            Some("greet".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_containing_function_rust() {
+        let mut parser = AstParser::new(Language::Rust);
+        // Line 0: `fn baz() {`
+        // Line 1: `    let z = 3;`
+        // Line 2: `}`
+        parser
+            .parse("fn baz() {\n    let z = 3;\n}".to_string())
+            .unwrap();
+
+        assert_eq!(
+            parser.get_containing_function(&loc(1)),
+            Some("baz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_containing_function_c() {
+        let mut parser = AstParser::new(Language::C);
+        // Line 0: `int add(int a, int b) {`
+        // Line 1: `    return a + b;`
+        // Line 2: `}`
+        parser
+            .parse("int add(int a, int b) {\n    return a + b;\n}".to_string())
+            .unwrap();
+
+        assert_eq!(
+            parser.get_containing_function(&loc(1)),
+            Some("add".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_containing_function_outside_returns_none() {
+        let mut parser = AstParser::new(Language::Python);
+        // Line 0: `x = 1` (module-level, not inside any function)
+        // Line 1: `def foo():`
+        // Line 2: `    y = 2`
+        parser
+            .parse("x = 1\ndef foo():\n    y = 2".to_string())
+            .unwrap();
+
+        assert_eq!(parser.get_containing_function(&loc(0)), None);
     }
 }

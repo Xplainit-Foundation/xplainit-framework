@@ -51,6 +51,12 @@ print(f"Total: {result}")
                     node.text.lines().next().unwrap_or("").trim());
             }
             
+            // Test enclosing-function resolution
+            match parser.get_containing_function(&location) {
+                Some(func) => println!("  Enclosing function at line 4: {}", func),
+                None => println!("  Enclosing function at line 4: <none>"),
+            }
+            
             // Test context extraction
             if let Some(context) = parser.get_context(&location, 2, 2) {
                 println!("  Context around line 4:");
@@ -98,6 +104,13 @@ function processOrder(order) {
                     }
                 }
             }
+            
+            // Resolve the enclosing function for a line inside the body.
+            let js_location = SourceLocation::new("test.js".to_string(), 3, 8);
+            match js_parser.get_containing_function(&js_location) {
+                Some(func) => println!("  Enclosing function at line 3: {}", func),
+                None => println!("  Enclosing function at line 3: <none>"),
+            }
         }
         Err(e) => {
             println!("✗ Failed to parse: {}", e);
@@ -129,6 +142,13 @@ pub fn main() {
             if let Some(root) = rust_parser.root_node() {
                 println!("  Root node type: {}", root.kind);
                 println!("  Number of top-level items: {}", root.children.len());
+            }
+            
+            // Resolve the enclosing function for a line inside fibonacci's body.
+            let rust_location = SourceLocation::new("test.rs".to_string(), 3, 8);
+            match rust_parser.get_containing_function(&rust_location) {
+                Some(func) => println!("  Enclosing function at line 3: {}", func),
+                None => println!("  Enclosing function at line 3: <none>"),
             }
         }
         Err(e) => {
@@ -169,4 +189,5 @@ pub fn main() {
     println!("  • AST cache: ✅ Working");
     println!("  • Node location: ✅ Working");
     println!("  • Context extraction: ✅ Working");
+    println!("  • Enclosing function resolution: ✅ Working");
 }
