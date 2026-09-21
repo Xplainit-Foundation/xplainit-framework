@@ -1,5 +1,5 @@
 //! Event Store - High-performance storage for execution events
-//! 
+//!
 //! This module provides lock-free, concurrent event storage with:
 //! - Zero-copy event recording
 //! - Thread-safe access
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn test_event_recording() {
         let store = EventStore::with_capacity(10);
-        
+
         let event = ExecutionEvent::FunctionEnter {
             id: uuid::Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn test_event_draining() {
         let store = EventStore::with_capacity(10);
-        
+
         for i in 0..5 {
             let event = ExecutionEvent::VariableDeclaration {
                 id: uuid::Uuid::new_v4(),
@@ -223,7 +223,7 @@ mod tests {
         }
 
         assert_eq!(store.len(), 5);
-        
+
         let events = store.drain();
         assert_eq!(events.len(), 5);
         assert_eq!(store.len(), 0);
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_circular_buffer_behavior() {
         let store = EventStore::with_capacity(3);
-        
+
         // Add 5 events to a buffer of size 3
         for i in 0..5 {
             let event = ExecutionEvent::VariableDeclaration {
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn test_error_event_tracking() {
         let store = EventStore::with_capacity(10);
-        
+
         // Record normal event
         store.record(ExecutionEvent::FunctionEnter {
             id: uuid::Uuid::new_v4(),
@@ -316,7 +316,7 @@ mod tests {
 
         let store2 = store1.clone();
         assert_eq!(store2.len(), 1);
-        
+
         // Both stores share the same underlying data
         store2.clear();
         assert_eq!(store1.len(), 0);

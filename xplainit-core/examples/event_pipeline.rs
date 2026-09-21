@@ -8,17 +8,20 @@
 //!
 //! Run with: cargo run --example event_pipeline --release
 
-use xplainit_core::{
-    Config, ExecutionEvent, Language, SourceLocation, OutputFormat, Value, Verbosity,
-    filter::{AcceptAllFilter, EventTypeFilter},
-    processor::{DeduplicationProcessor, EnrichmentProcessor, PassThroughProcessor, ProcessorPipeline, RateLimitProcessor},
-    sink::{ConsoleSink, MemorySink, MultiSink},
-    pipeline::EventPipeline,
-};
 use chrono::Utc;
 use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;
+use xplainit_core::{
+    filter::{AcceptAllFilter, EventTypeFilter},
+    pipeline::EventPipeline,
+    processor::{
+        DeduplicationProcessor, EnrichmentProcessor, PassThroughProcessor, ProcessorPipeline,
+        RateLimitProcessor,
+    },
+    sink::{ConsoleSink, MemorySink, MultiSink},
+    Config, ExecutionEvent, Language, OutputFormat, SourceLocation, Value, Verbosity,
+};
 
 /// Generate sample events for testing
 fn generate_sample_events() -> Vec<ExecutionEvent> {
@@ -106,18 +109,15 @@ fn example_simple_pipeline() {
     println!("\n=== Example 1: Simple Pipeline ===\n");
 
     let filter = Box::new(AcceptAllFilter);
-    let processors = ProcessorPipeline::new()
-        .add_processor(Box::new(PassThroughProcessor));
+    let processors = ProcessorPipeline::new().add_processor(Box::new(PassThroughProcessor));
     let sink = Box::new(ConsoleSink::new(OutputFormat::Console));
 
-    let mut pipeline = EventPipeline::new(filter, processors)
-        .add_sink(sink);
+    let mut pipeline = EventPipeline::new(filter, processors).add_sink(sink);
 
-    let config = Config::new(Language::Python)
-        .with_verbosity(Verbosity::Detailed);
+    let config = Config::new(Language::Python).with_verbosity(Verbosity::Detailed);
 
     println!("Processing events with simple pass-through pipeline...\n");
-    
+
     for event in generate_sample_events().into_iter().take(3) {
         let _ = pipeline.handle_event(event, &config);
     }
@@ -128,7 +128,7 @@ fn example_multi_processor_pipeline() {
     println!("\n=== Example 2: Multi-Processor Pipeline ===\n");
 
     let filter = Box::new(AcceptAllFilter);
-    
+
     // Build processor chain: Enrichment → Deduplication → Rate Limiting
     let processors = ProcessorPipeline::new()
         .add_processor(Box::new(EnrichmentProcessor::new()))
@@ -137,16 +137,14 @@ fn example_multi_processor_pipeline() {
 
     let sink = Box::new(ConsoleSink::new(OutputFormat::Console));
 
-    let mut pipeline = EventPipeline::new(filter, processors)
-        .add_sink(sink);
+    let mut pipeline = EventPipeline::new(filter, processors).add_sink(sink);
 
-    let config = Config::new(Language::Python)
-        .with_verbosity(Verbosity::Normal);
+    let config = Config::new(Language::Python).with_verbosity(Verbosity::Normal);
 
     println!("Processing events with enrichment + deduplication + rate limiting...\n");
-    
+
     let events = generate_sample_events();
-    
+
     // Process first batch
     for event in events.iter().take(4) {
         let _ = pipeline.handle_event(event.clone(), &config);
@@ -162,8 +160,7 @@ fn example_multi_sink_pipeline() {
     println!("\n=== Example 3: Multi-Sink Pipeline ===\n");
 
     let filter = Box::new(EventTypeFilter::only_errors());
-    let processors = ProcessorPipeline::new()
-        .add_processor(Box::new(EnrichmentProcessor::new()));
+    let processors = ProcessorPipeline::new().add_processor(Box::new(EnrichmentProcessor::new()));
 
     // Create memory sink to capture events
     let memory = MemorySink::new(100);
@@ -177,11 +174,10 @@ fn example_multi_sink_pipeline() {
         .add_sink(console)
         .add_sink(mem_sink);
 
-    let config = Config::new(Language::Python)
-        .with_verbosity(Verbosity::Detailed);
+    let config = Config::new(Language::Python).with_verbosity(Verbosity::Detailed);
 
     println!("Processing events with error-only filter to console + memory...\n");
-    
+
     for event in generate_sample_events() {
         let _ = pipeline.handle_event(event, &config);
     }
@@ -196,7 +192,7 @@ fn example_production_pipeline() {
     println!("\n=== Example 4: Production Pipeline ===\n");
 
     let filter = Box::new(EventTypeFilter::only_errors());
-    
+
     // Production processor chain: optimize for performance
     let processors = ProcessorPipeline::new()
         .add_processor(Box::new(DeduplicationProcessor::new(1000)))
@@ -207,15 +203,14 @@ fn example_production_pipeline() {
         .add_sink(Box::new(ConsoleSink::new(OutputFormat::Json)))
         .add_sink(Box::new(MemorySink::new(10000)));
 
-    let mut pipeline = EventPipeline::new(filter, processors)
-        .add_sink(Box::new(multi_sink));
+    let mut pipeline = EventPipeline::new(filter, processors).add_sink(Box::new(multi_sink));
 
     let config = Config::new(Language::Python)
         .with_verbosity(Verbosity::Brief)
         .with_max_depth(10);
 
     println!("Production config: Error-only, Dedup(1000), RateLimit(500/s), JSON output\n");
-    
+
     for event in generate_sample_events() {
         let _ = pipeline.handle_event(event, &config);
     }

@@ -18,14 +18,14 @@ pub enum ErrorSeverity {
 /// Error category for grouping similar errors
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCategory {
-    Logic,          // Logic errors (wrong algorithm, incorrect conditions)
-    Type,           // Type-related errors
-    Memory,         // Memory-related errors (null, out of bounds)
-    Arithmetic,     // Math-related errors (division by zero, overflow)
-    Concurrency,    // Threading/concurrency issues
-    Resource,       // Resource exhaustion (stack overflow, memory leak)
-    Syntax,         // Syntax errors
-    Runtime,        // General runtime errors
+    Logic,       // Logic errors (wrong algorithm, incorrect conditions)
+    Type,        // Type-related errors
+    Memory,      // Memory-related errors (null, out of bounds)
+    Arithmetic,  // Math-related errors (division by zero, overflow)
+    Concurrency, // Threading/concurrency issues
+    Resource,    // Resource exhaustion (stack overflow, memory leak)
+    Syntax,      // Syntax errors
+    Runtime,     // General runtime errors
 }
 
 /// Detailed error analysis result
@@ -33,28 +33,28 @@ pub enum ErrorCategory {
 pub struct ErrorAnalysis {
     /// The original event
     pub event: ExecutionEvent,
-    
+
     /// Severity of the error
     pub severity: ErrorSeverity,
-    
+
     /// Category of the error
     pub category: ErrorCategory,
-    
+
     /// Root cause explanation
     pub root_cause: String,
-    
+
     /// What led to this error (chain of events)
     pub leading_events: Vec<String>,
-    
+
     /// Immediate fix suggestions
     pub fix_suggestions: Vec<String>,
-    
+
     /// Preventive measures for the future
     pub prevention_tips: Vec<String>,
-    
+
     /// Related documentation/resources
     pub resources: Vec<String>,
-    
+
     /// Similar error patterns the user might encounter
     pub related_errors: Vec<String>,
 }
@@ -63,7 +63,7 @@ pub struct ErrorAnalysis {
 pub struct ErrorExplainer {
     /// Track recent events for context analysis
     recent_events: Vec<ExecutionEvent>,
-    
+
     /// Maximum events to keep for context
     max_context_events: usize,
 }
@@ -75,28 +75,28 @@ impl ErrorExplainer {
             max_context_events: 100,
         }
     }
-    
+
     pub fn with_context_size(mut self, size: usize) -> Self {
         self.max_context_events = size;
         self
     }
-    
+
     /// Add an event to the context history
     pub fn track_event(&mut self, event: ExecutionEvent) {
         self.recent_events.push(event);
-        
+
         // Keep only the most recent events
         if self.recent_events.len() > self.max_context_events {
             self.recent_events.remove(0);
         }
     }
-    
+
     /// Analyze an error event in depth
     pub fn analyze(&self, event: &ExecutionEvent) -> Option<ErrorAnalysis> {
         if !event.is_error() {
             return None;
         }
-        
+
         match event {
             ExecutionEvent::SyntaxError { .. } => Some(self.analyze_syntax_error(event)),
             ExecutionEvent::TypeError { .. } => Some(self.analyze_type_error(event)),
@@ -113,32 +113,45 @@ impl ErrorExplainer {
             _ => None,
         }
     }
-    
+
     // ===== Specific Error Analyzers =====
-    
+
     fn analyze_syntax_error(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::SyntaxError { message, suggestion, .. } = event {
+        if let ExecutionEvent::SyntaxError {
+            message,
+            suggestion,
+            ..
+        } = event
+        {
             let mut fixes = vec![];
             if let Some(sug) = suggestion {
                 fixes.push(sug.clone());
             }
-            
+
             // Common syntax error patterns
             if message.contains("unexpected") {
-                fixes.push("Check for missing or extra punctuation (brackets, quotes, semicolons)".to_string());
+                fixes.push(
+                    "Check for missing or extra punctuation (brackets, quotes, semicolons)"
+                        .to_string(),
+                );
             }
             if message.contains("indentation") || message.contains("indent") {
-                fixes.push("Make sure your code has consistent indentation (all tabs or all spaces)".to_string());
+                fixes.push(
+                    "Make sure your code has consistent indentation (all tabs or all spaces)"
+                        .to_string(),
+                );
             }
             if message.contains("EOF") || message.contains("end of file") {
                 fixes.push("You might have unclosed brackets, quotes, or parentheses".to_string());
             }
-            
+
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Fatal,
                 category: ErrorCategory::Syntax,
-                root_cause: "The code has a syntax error and cannot be parsed by the compiler/interpreter".to_string(),
+                root_cause:
+                    "The code has a syntax error and cannot be parsed by the compiler/interpreter"
+                        .to_string(),
                 leading_events: vec![],
                 fix_suggestions: fixes,
                 prevention_tips: vec![
@@ -157,14 +170,23 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_type_error(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::TypeError { expected, got, operation, .. } = event {
+        if let ExecutionEvent::TypeError {
+            expected,
+            got,
+            operation,
+            ..
+        } = event
+        {
             let mut fixes = vec![
-                format!("Convert the value to {} before using it in this operation", expected),
+                format!(
+                    "Convert the value to {} before using it in this operation",
+                    expected
+                ),
                 format!("Check that the variable contains a {} type value", expected),
             ];
-            
+
             // Specific type conversion suggestions
             let conversion_hint = match (expected.as_str(), got.as_str()) {
                 ("string", "integer") | ("string", "float") => "Use str() or string conversion",
@@ -174,13 +196,15 @@ impl ErrorExplainer {
                 _ => "Ensure type compatibility",
             };
             fixes.push(conversion_hint.to_string());
-            
+
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Error,
                 category: ErrorCategory::Type,
-                root_cause: format!("Attempted to {} with the wrong data type (got {}, expected {})", 
-                    operation, got, expected),
+                root_cause: format!(
+                    "Attempted to {} with the wrong data type (got {}, expected {})",
+                    operation, got, expected
+                ),
                 leading_events: self.find_related_variable_events(),
                 fix_suggestions: fixes,
                 prevention_tips: vec![
@@ -188,9 +212,7 @@ impl ErrorExplainer {
                     "Validate data types before operations".to_string(),
                     "Use a type checker tool (mypy for Python, TypeScript for JS)".to_string(),
                 ],
-                resources: vec![
-                    format!("Learn about {} type conversion", expected),
-                ],
+                resources: vec![format!("Learn about {} type conversion", expected)],
                 related_errors: vec![
                     "AttributeError (accessing wrong type)".to_string(),
                     "ValueError (wrong value for type)".to_string(),
@@ -200,21 +222,34 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_null_pointer_error(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::NullPointerError { variable, operation, .. } = event {
+        if let ExecutionEvent::NullPointerError {
+            variable,
+            operation,
+            ..
+        } = event
+        {
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Critical,
                 category: ErrorCategory::Memory,
-                root_cause: format!("Tried to {} but the variable '{}' was null/undefined/none", 
-                    operation, variable),
+                root_cause: format!(
+                    "Tried to {} but the variable '{}' was null/undefined/none",
+                    operation, variable
+                ),
                 leading_events: self.find_variable_history(variable),
                 fix_suggestions: vec![
-                    format!("Check if '{}' is null before using: if {} != null {{ ... }}", variable, variable),
+                    format!(
+                        "Check if '{}' is null before using: if {} != null {{ ... }}",
+                        variable, variable
+                    ),
                     format!("Initialize '{}' with a default value", variable),
                     "Use optional chaining (?.) or null-coalescing operators".to_string(),
-                    format!("Add a guard clause at the function start to validate '{}'", variable),
+                    format!(
+                        "Add a guard clause at the function start to validate '{}'",
+                        variable
+                    ),
                 ],
                 prevention_tips: vec![
                     "Always initialize variables before use".to_string(),
@@ -236,41 +271,60 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_index_error(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::IndexOutOfBounds { index, size, collection, .. } = event {
+        if let ExecutionEvent::IndexOutOfBounds {
+            index,
+            size,
+            collection,
+            ..
+        } = event
+        {
             let valid_range = if *size > 0 {
                 format!("0 to {}", size - 1)
             } else {
                 "none (array is empty)".to_string()
             };
-            
+
             let mut fixes = vec![
-                format!("Check that the index is within bounds: 0 <= index < {}", size),
-                "Use length checking before accessing: if (index < array.length) { ... }".to_string(),
+                format!(
+                    "Check that the index is within bounds: 0 <= index < {}",
+                    size
+                ),
+                "Use length checking before accessing: if (index < array.length) { ... }"
+                    .to_string(),
             ];
-            
+
             if *index < 0 {
                 fixes.push("Negative indices might not be supported in this language".to_string());
             } else if *index as usize >= *size {
-                fixes.push(format!("Your index ({}) is too large. The collection only has {} elements", index, size));
+                fixes.push(format!(
+                    "Your index ({}) is too large. The collection only has {} elements",
+                    index, size
+                ));
             }
-            
+
             if *size == 0 {
-                fixes.push(format!("The collection '{}' is empty - check why no elements were added", collection));
+                fixes.push(format!(
+                    "The collection '{}' is empty - check why no elements were added",
+                    collection
+                ));
             }
-            
+
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Error,
                 category: ErrorCategory::Memory,
-                root_cause: format!("Attempted to access index {} in '{}' but valid indices are: {}", 
-                    index, collection, valid_range),
+                root_cause: format!(
+                    "Attempted to access index {} in '{}' but valid indices are: {}",
+                    index, collection, valid_range
+                ),
                 leading_events: self.find_related_array_events(collection),
                 fix_suggestions: fixes,
                 prevention_tips: vec![
                     "Always check array bounds before accessing".to_string(),
-                    "Use .get() methods that return Optional instead of direct indexing".to_string(),
+                    "Use .get() methods that return Optional instead of direct indexing"
+                        .to_string(),
                     "Consider using iterators instead of manual indexing".to_string(),
                     "Add assertions or guards for array access".to_string(),
                 ],
@@ -288,23 +342,31 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_division_by_zero(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::DivisionByZero { denominator_var, .. } = event {
+        if let ExecutionEvent::DivisionByZero {
+            denominator_var, ..
+        } = event
+        {
             let var_specific_fix = if let Some(var) = denominator_var {
                 vec![
-                    format!("Add a check: if {} != 0 {{ result = numerator / {} }}", var, var),
+                    format!(
+                        "Add a check: if {} != 0 {{ result = numerator / {} }}",
+                        var, var
+                    ),
                     format!("Investigate why '{}' became zero", var),
                 ]
             } else {
                 vec!["Check that the denominator is not zero before dividing".to_string()]
             };
-            
+
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Critical,
                 category: ErrorCategory::Arithmetic,
-                root_cause: "Division by zero is mathematically undefined and causes a runtime error".to_string(),
+                root_cause:
+                    "Division by zero is mathematically undefined and causes a runtime error"
+                        .to_string(),
                 leading_events: if let Some(var) = denominator_var {
                     self.find_variable_history(var)
                 } else {
@@ -314,8 +376,10 @@ impl ErrorExplainer {
                 prevention_tips: vec![
                     "Always validate denominators before division".to_string(),
                     "Use try-catch blocks around division operations".to_string(),
-                    "Add epsilon checks for floating point: if (abs(denominator) > 1e-10)".to_string(),
-                    "Consider what should happen when denominator is zero (return default value?)".to_string(),
+                    "Add epsilon checks for floating point: if (abs(denominator) > 1e-10)"
+                        .to_string(),
+                    "Consider what should happen when denominator is zero (return default value?)"
+                        .to_string(),
                 ],
                 resources: vec![
                     "Safe division patterns".to_string(),
@@ -331,22 +395,34 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_stack_overflow(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::StackOverflow { function, recursion_depth, .. } = event {
+        if let ExecutionEvent::StackOverflow {
+            function,
+            recursion_depth,
+            ..
+        } = event
+        {
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Fatal,
                 category: ErrorCategory::Resource,
-                root_cause: format!("Function '{}' recursed {} times without a stopping condition", 
-                    function, recursion_depth),
+                root_cause: format!(
+                    "Function '{}' recursed {} times without a stopping condition",
+                    function, recursion_depth
+                ),
                 leading_events: self.find_function_call_pattern(function),
                 fix_suggestions: vec![
-                    format!("Add or fix the base case in '{}' to stop recursion", function),
-                    "Ensure the recursive call parameters are progressing toward the base case".to_string(),
+                    format!(
+                        "Add or fix the base case in '{}' to stop recursion",
+                        function
+                    ),
+                    "Ensure the recursive call parameters are progressing toward the base case"
+                        .to_string(),
                     "Check that the base case condition can actually be reached".to_string(),
                     "Consider using iteration instead of recursion".to_string(),
-                    "If recursion is intentional, increase stack size (platform-specific)".to_string(),
+                    "If recursion is intentional, increase stack size (platform-specific)"
+                        .to_string(),
                 ],
                 prevention_tips: vec![
                     "Always define a clear base case for recursive functions".to_string(),
@@ -369,9 +445,14 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_runtime_error(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::RuntimeError { error_type, message, .. } = event {
+        if let ExecutionEvent::RuntimeError {
+            error_type,
+            message,
+            ..
+        } = event
+        {
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Error,
@@ -395,15 +476,21 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_exception(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::Exception { error_type, message, caught, .. } = event {
+        if let ExecutionEvent::Exception {
+            error_type,
+            message,
+            caught,
+            ..
+        } = event
+        {
             let severity = if *caught {
                 ErrorSeverity::Warning
             } else {
                 ErrorSeverity::Critical
             };
-            
+
             ErrorAnalysis {
                 event: event.clone(),
                 severity,
@@ -427,7 +514,7 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_panic(&self, event: &ExecutionEvent) -> ErrorAnalysis {
         if let ExecutionEvent::Panic { message, .. } = event {
             ErrorAnalysis {
@@ -460,15 +547,22 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_infinite_loop(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::InfiniteLoopDetected { loop_type, iterations, .. } = event {
+        if let ExecutionEvent::InfiniteLoopDetected {
+            loop_type,
+            iterations,
+            ..
+        } = event
+        {
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Critical,
                 category: ErrorCategory::Logic,
-                root_cause: format!("The {} loop has executed {} iterations without exiting", 
-                    loop_type, iterations),
+                root_cause: format!(
+                    "The {} loop has executed {} iterations without exiting",
+                    loop_type, iterations
+                ),
                 leading_events: self.find_recent_loop_events(),
                 fix_suggestions: vec![
                     "Check the loop condition - ensure it can become false".to_string(),
@@ -496,15 +590,17 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_deadlock(&self, event: &ExecutionEvent) -> ErrorAnalysis {
         if let ExecutionEvent::DeadlockDetected { threads, .. } = event {
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Fatal,
                 category: ErrorCategory::Concurrency,
-                root_cause: format!("Deadlock between {} threads - each waiting for resources held by others", 
-                    threads.len()),
+                root_cause: format!(
+                    "Deadlock between {} threads - each waiting for resources held by others",
+                    threads.len()
+                ),
                 leading_events: vec![],
                 fix_suggestions: vec![
                     "Ensure all threads acquire locks in the same order".to_string(),
@@ -533,15 +629,22 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     fn analyze_memory_leak(&self, event: &ExecutionEvent) -> ErrorAnalysis {
-        if let ExecutionEvent::MemoryLeakDetected { allocation_count, leaked_bytes, .. } = event {
+        if let ExecutionEvent::MemoryLeakDetected {
+            allocation_count,
+            leaked_bytes,
+            ..
+        } = event
+        {
             ErrorAnalysis {
                 event: event.clone(),
                 severity: ErrorSeverity::Warning,
                 category: ErrorCategory::Memory,
-                root_cause: format!("{} allocations ({} bytes) were not freed", 
-                    allocation_count, leaked_bytes),
+                root_cause: format!(
+                    "{} allocations ({} bytes) were not freed",
+                    allocation_count, leaked_bytes
+                ),
                 leading_events: vec![],
                 fix_suggestions: vec![
                     "Ensure all allocated resources are properly freed".to_string(),
@@ -550,7 +653,8 @@ impl ErrorExplainer {
                     "Check for circular references that prevent cleanup".to_string(),
                 ],
                 prevention_tips: vec![
-                    "Use smart pointers (shared_ptr, Arc, etc.) instead of raw pointers".to_string(),
+                    "Use smart pointers (shared_ptr, Arc, etc.) instead of raw pointers"
+                        .to_string(),
                     "Follow RAII principles - tie resource lifetime to object lifetime".to_string(),
                     "Use memory profiling tools regularly".to_string(),
                     "Implement proper cleanup in destructors/finalizers".to_string(),
@@ -570,9 +674,9 @@ impl ErrorExplainer {
             self.default_analysis(event)
         }
     }
-    
+
     // ===== Context Analysis Helpers =====
-    
+
     fn find_variable_history(&self, var_name: &str) -> Vec<String> {
         self.recent_events
             .iter()
@@ -580,14 +684,20 @@ impl ErrorExplainer {
                 ExecutionEvent::VariableDeclaration { name, .. } if name == var_name => {
                     Some(format!("Variable '{}' was declared", name))
                 }
-                ExecutionEvent::VariableAssign { name, old_value, new_value, .. } if name == var_name => {
-                    Some(format!("'{}' changed from {:?} to {:?}", name, old_value, new_value))
-                }
+                ExecutionEvent::VariableAssign {
+                    name,
+                    old_value,
+                    new_value,
+                    ..
+                } if name == var_name => Some(format!(
+                    "'{}' changed from {:?} to {:?}",
+                    name, old_value, new_value
+                )),
                 _ => None,
             })
             .collect()
     }
-    
+
     fn find_related_variable_events(&self) -> Vec<String> {
         self.recent_events
             .iter()
@@ -604,7 +714,7 @@ impl ErrorExplainer {
             })
             .collect()
     }
-    
+
     fn find_related_array_events(&self, array_name: &str) -> Vec<String> {
         self.recent_events
             .iter()
@@ -619,7 +729,7 @@ impl ErrorExplainer {
             })
             .collect()
     }
-    
+
     fn find_function_call_pattern(&self, func_name: &str) -> Vec<String> {
         self.recent_events
             .iter()
@@ -633,7 +743,7 @@ impl ErrorExplainer {
             })
             .collect()
     }
-    
+
     fn find_recent_loop_events(&self) -> Vec<String> {
         self.recent_events
             .iter()
@@ -650,7 +760,7 @@ impl ErrorExplainer {
             })
             .collect()
     }
-    
+
     fn find_recent_events(&self, count: usize) -> Vec<String> {
         self.recent_events
             .iter()
@@ -659,7 +769,7 @@ impl ErrorExplainer {
             .map(|e| format!("{:?}", e.event_type()))
             .collect()
     }
-    
+
     fn default_analysis(&self, event: &ExecutionEvent) -> ErrorAnalysis {
         ErrorAnalysis {
             event: event.clone(),
@@ -691,8 +801,8 @@ impl Default for ErrorExplainer {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use uuid::Uuid;
     use std::collections::HashMap;
+    use uuid::Uuid;
 
     #[test]
     fn test_error_explainer_creation() {
@@ -710,7 +820,7 @@ mod tests {
             location: SourceLocation::unknown(),
             timestamp: Utc::now(),
         };
-        
+
         explainer.track_event(event);
         assert_eq!(explainer.recent_events.len(), 1);
     }
@@ -725,7 +835,7 @@ mod tests {
             location: SourceLocation::new("test.py".to_string(), 10, 5),
             timestamp: Utc::now(),
         };
-        
+
         let analysis = explainer.analyze(&event).unwrap();
         assert_eq!(analysis.severity, ErrorSeverity::Critical);
         assert_eq!(analysis.category, ErrorCategory::Arithmetic);
@@ -744,7 +854,7 @@ mod tests {
             location: SourceLocation::new("test.js".to_string(), 20, 10),
             timestamp: Utc::now(),
         };
-        
+
         let analysis = explainer.analyze(&event).unwrap();
         assert_eq!(analysis.category, ErrorCategory::Type);
         assert!(analysis.root_cause.contains("wrong data type"));
@@ -760,11 +870,14 @@ mod tests {
             location: SourceLocation::new("test.py".to_string(), 5, 1),
             timestamp: Utc::now(),
         };
-        
+
         let analysis = explainer.analyze(&event).unwrap();
         assert_eq!(analysis.severity, ErrorSeverity::Fatal);
         assert_eq!(analysis.category, ErrorCategory::Resource);
-        assert!(analysis.fix_suggestions.iter().any(|s| s.contains("base case")));
+        assert!(analysis
+            .fix_suggestions
+            .iter()
+            .any(|s| s.contains("base case")));
     }
 
     #[test]
@@ -777,14 +890,14 @@ mod tests {
             location: SourceLocation::unknown(),
             timestamp: Utc::now(),
         };
-        
+
         assert!(explainer.analyze(&event).is_none());
     }
 
     #[test]
     fn test_context_tracking() {
         let mut explainer = ErrorExplainer::with_context_size(ErrorExplainer::new(), 5);
-        
+
         // Add 10 events
         for i in 0..10 {
             let event = ExecutionEvent::VariableAssign {
@@ -797,7 +910,7 @@ mod tests {
             };
             explainer.track_event(event);
         }
-        
+
         // Should only keep the last 5
         assert_eq!(explainer.recent_events.len(), 5);
     }

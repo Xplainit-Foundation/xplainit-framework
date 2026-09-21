@@ -1,5 +1,5 @@
 //! Event Collector Trait - Interface for language-specific event collection
-//! 
+//!
 //! This module defines the trait that all language-specific collectors must implement.
 //! Each language (Python, JavaScript, C, etc.) will have its own collector implementation.
 
@@ -7,7 +7,7 @@ use crate::{ExecutionEvent, Result};
 use std::path::PathBuf;
 
 /// Trait for collecting execution events from a running program
-/// 
+///
 /// Each language implementation will provide its own concrete implementation:
 /// - PythonCollector (using sys.settrace)
 /// - JavaScriptCollector (using V8 Inspector Protocol)
@@ -15,10 +15,10 @@ use std::path::PathBuf;
 /// - etc.
 pub trait EventCollector: Send + Sync {
     /// Start collecting events from the target
-    /// 
+    ///
     /// # Arguments
     /// * `target` - The target to instrument (file path, process ID, etc.)
-    /// 
+    ///
     /// # Returns
     /// Result indicating success or failure of instrumentation
     fn start(&mut self, target: &CollectionTarget) -> Result<()>;
@@ -30,7 +30,7 @@ pub trait EventCollector: Send + Sync {
     fn is_active(&self) -> bool;
 
     /// Get the next batch of collected events
-    /// 
+    ///
     /// This is called periodically by the runtime engine to retrieve
     /// events captured by the language-specific collector.
     fn collect_events(&mut self) -> Result<Vec<ExecutionEvent>>;
@@ -50,22 +50,15 @@ pub trait EventCollector: Send + Sync {
 pub enum CollectionTarget {
     /// Collect from a source file
     File(PathBuf),
-    
+
     /// Collect from a running process
-    Process {
-        pid: u32,
-    },
-    
+    Process { pid: u32 },
+
     /// Collect from a script/code string
-    Code {
-        source: String,
-        language: String,
-    },
-    
+    Code { source: String, language: String },
+
     /// Collect from a module/library
-    Module {
-        name: String,
-    },
+    Module { name: String },
 }
 
 /// Configuration for event collectors
@@ -73,22 +66,22 @@ pub enum CollectionTarget {
 pub struct CollectorConfig {
     /// Maximum events to buffer before forcing a flush
     pub max_buffer_size: usize,
-    
+
     /// Whether to collect error events
     pub collect_errors: bool,
-    
+
     /// Whether to collect normal execution events
     pub collect_normal: bool,
-    
+
     /// Maximum call stack depth to trace
     pub max_depth: usize,
-    
+
     /// Whether to trace into standard library
     pub trace_stdlib: bool,
-    
+
     /// Custom filter function names to include
     pub include_functions: Vec<String>,
-    
+
     /// Custom filter function names to exclude
     pub exclude_functions: Vec<String>,
 }
@@ -112,16 +105,16 @@ impl Default for CollectorConfig {
 pub struct CollectorStats {
     /// Total events collected
     pub events_collected: u64,
-    
+
     /// Events currently buffered
     pub events_buffered: usize,
-    
+
     /// Total errors encountered during collection
     pub collection_errors: u64,
-    
+
     /// Whether collector is currently active
     pub is_active: bool,
-    
+
     /// Number of times collection was paused/resumed
     pub pause_count: u64,
 }

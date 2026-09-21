@@ -1,16 +1,16 @@
 //! Event Filter - Selective event capture
-//! 
+//!
 //! Filters determine which events should be captured and which should be ignored.
 //! This allows for precise control over tracing scope and performance.
 
-use crate::{ExecutionEvent, Config};
+use crate::{Config, ExecutionEvent};
 use std::collections::HashSet;
 
 /// Trait for filtering events
 pub trait EventFilter: Send + Sync {
     /// Returns true if the event should be captured
     fn should_capture(&self, event: &ExecutionEvent, config: &Config) -> bool;
-    
+
     /// Returns a description of this filter
     fn description(&self) -> String;
 }
@@ -23,7 +23,7 @@ impl EventFilter for AcceptAllFilter {
     fn should_capture(&self, _event: &ExecutionEvent, _config: &Config) -> bool {
         true
     }
-    
+
     fn description(&self) -> String {
         "Accept all events".to_string()
     }
@@ -48,17 +48,17 @@ impl FunctionFilter {
             trace_stdlib: false,
         }
     }
-    
+
     pub fn include(mut self, func: impl Into<String>) -> Self {
         self.include.insert(func.into());
         self
     }
-    
+
     pub fn exclude(mut self, func: impl Into<String>) -> Self {
         self.exclude.insert(func.into());
         self
     }
-    
+
     pub fn with_stdlib(mut self, trace: bool) -> Self {
         self.trace_stdlib = trace;
         self
@@ -79,27 +79,27 @@ impl EventFilter for FunctionFilter {
             ExecutionEvent::FunctionExit { name, .. } => Some(name.as_str()),
             _ => None,
         };
-        
+
         if let Some(name) = func_name {
             // Check exclusions first
             if self.exclude.contains(name) {
                 return false;
             }
-            
+
             // If include list is specified, only include those
             if !self.include.is_empty() && !self.include.contains(name) {
                 return false;
             }
-            
+
             // Check stdlib
             if !self.trace_stdlib && is_stdlib_function(name) {
                 return false;
             }
         }
-        
+
         true
     }
-    
+
     fn description(&self) -> String {
         format!(
             "Function filter (include: {}, exclude: {}, stdlib: {})",
@@ -131,7 +131,7 @@ impl EventTypeFilter {
             capture_loops: true,
         }
     }
-    
+
     pub fn only_errors() -> Self {
         Self {
             capture_normal: false,
@@ -141,7 +141,7 @@ impl EventTypeFilter {
             capture_loops: false,
         }
     }
-    
+
     pub fn only_functions() -> Self {
         Self {
             capture_normal: false,
@@ -162,27 +162,18 @@ impl EventFilter for EventTypeFilter {
             ExecutionEvent::VariableDeclaration { .. } | ExecutionEvent::VariableAssign { .. } => {
                 self.capture_variables
             }
-            ExecutionEvent::LoopEntry { .. } 
-            | ExecutionEvent::LoopIteration { .. } 
-            | ExecutionEvent::LoopExit { .. } => {
-                self.capture_loops
-            }
-            _ if event.is_error() => {
-                self.capture_errors
-            }
-            _ => {
-                self.capture_normal
-            }
+            ExecutionEvent::LoopEntry { .. }
+            | ExecutionEvent::LoopIteration { .. }
+            | ExecutionEvent::LoopExit { .. } => self.capture_loops,
+            _ if event.is_error() => self.capture_errors,
+            _ => self.capture_normal,
         }
     }
-    
+
     fn description(&self) -> String {
         format!(
             "Event type filter (functions: {}, variables: {}, loops: {}, errors: {})",
-            self.capture_functions,
-            self.capture_variables,
-            self.capture_loops,
-            self.capture_errors
+            self.capture_functions, self.capture_variables, self.capture_loops, self.capture_errors
         )
     }
 }
@@ -206,13 +197,11 @@ impl DepthFilter {
 impl EventFilter for DepthFilter {
     fn should_capture(&self, event: &ExecutionEvent, _config: &Config) -> bool {
         match event {
-            ExecutionEvent::FunctionEnter { .. } => {
-                self.current_depth < self.max_depth
-            }
+            ExecutionEvent::FunctionEnter { .. } => self.current_depth < self.max_depth,
             _ => true,
         }
     }
-    
+
     fn description(&self) -> String {
         format!("Depth filter (max: {})", self.max_depth)
     }
@@ -233,7 +222,7 @@ impl CompositeFilter {
             require_all,
         }
     }
-    
+
     pub fn add_filter(mut self, filter: Box<dyn EventFilter>) -> Self {
         self.filters.push(filter);
         self
@@ -245,7 +234,7 @@ impl EventFilter for CompositeFilter {
         if self.filters.is_empty() {
             return true;
         }
-        
+
         if self.require_all {
             // ALL filters must pass
             self.filters.iter().all(|f| f.should_capture(event, config))
@@ -254,7 +243,7 @@ impl EventFilter for CompositeFilter {
             self.filters.iter().any(|f| f.should_capture(event, config))
         }
     }
-    
+
     fn description(&self) -> String {
         format!(
             "Composite filter ({} filters, require_all: {})",
@@ -287,7 +276,7 @@ mod tests {
     fn test_accept_all_filter() {
         let filter = AcceptAllFilter;
         let config = Config::new(crate::Language::Python);
-        
+
         let event = ExecutionEvent::FunctionEnter {
             id: uuid::Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -300,17 +289,16 @@ mod tests {
             name: "test".into(),
             args: HashMap::new(),
         };
-        
+
         assert!(filter.should_capture(&event, &config));
     }
 
     #[test]
     fn test_function_filter_include() {
-        let filter = FunctionFilter::new()
-            .include("allowed_func");
-        
+        let filter = FunctionFilter::new().include("allowed_func");
+
         let config = Config::new(crate::Language::Python);
-        
+
         let allowed = ExecutionEvent::FunctionEnter {
             id: uuid::Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -323,7 +311,7 @@ mod tests {
             name: "allowed_func".into(),
             args: HashMap::new(),
         };
-        
+
         let not_allowed = ExecutionEvent::FunctionEnter {
             id: uuid::Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -336,18 +324,17 @@ mod tests {
             name: "other_func".into(),
             args: HashMap::new(),
         };
-        
+
         assert!(filter.should_capture(&allowed, &config));
         assert!(!filter.should_capture(&not_allowed, &config));
     }
 
     #[test]
     fn test_function_filter_exclude() {
-        let filter = FunctionFilter::new()
-            .exclude("blocked_func");
-        
+        let filter = FunctionFilter::new().exclude("blocked_func");
+
         let config = Config::new(crate::Language::Python);
-        
+
         let blocked = ExecutionEvent::FunctionEnter {
             id: uuid::Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -360,7 +347,7 @@ mod tests {
             name: "blocked_func".into(),
             args: HashMap::new(),
         };
-        
+
         assert!(!filter.should_capture(&blocked, &config));
     }
 
@@ -368,7 +355,7 @@ mod tests {
     fn test_event_type_filter() {
         let filter = EventTypeFilter::only_errors();
         let config = Config::new(crate::Language::Python);
-        
+
         let normal = ExecutionEvent::FunctionEnter {
             id: uuid::Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -381,7 +368,7 @@ mod tests {
             name: "test".into(),
             args: HashMap::new(),
         };
-        
+
         let error = ExecutionEvent::RuntimeError {
             id: uuid::Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -396,7 +383,7 @@ mod tests {
             stack_trace: vec![],
             context: HashMap::new(),
         };
-        
+
         assert!(!filter.should_capture(&normal, &config));
         assert!(filter.should_capture(&error, &config));
     }

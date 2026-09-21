@@ -1,5 +1,5 @@
 //! AST Parsing Example
-//! 
+//!
 //! Demonstrates the new Tree-sitter integration for parsing
 //! source code and extracting rich context.
 
@@ -7,7 +7,7 @@ use xplainit_core::*;
 
 fn main() {
     println!("=== Xplainit Core - AST Parsing Example ===\n");
-    
+
     // Example 1: Parse Python code
     println!("--- Example 1: Python Code Parsing ---");
     let python_code = r#"
@@ -26,37 +26,43 @@ def calculate_total(price, quantity):
 result = calculate_total(29.99, 3)
 print(f"Total: {result}")
 "#;
-    
+
     let mut parser = AstParser::new(Language::Python);
     match parser.parse(python_code.to_string()) {
         Ok(_) => {
             println!("✓ Successfully parsed Python code");
-            
+
             if let Some(root) = parser.root_node() {
                 println!("  Root node type: {}", root.kind);
                 println!("  Number of children: {}", root.children.len());
-                
+
                 // Show first few nodes
                 for (i, child) in root.children.iter().take(3).enumerate() {
-                    println!("  Child {}: {} at line {}", 
-                        i + 1, child.kind, child.start.line);
+                    println!(
+                        "  Child {}: {} at line {}",
+                        i + 1,
+                        child.kind,
+                        child.start.line
+                    );
                 }
             }
-            
+
             // Test finding node at specific location
             let location = SourceLocation::new("test.py".to_string(), 4, 4);
             if let Some(node) = parser.find_node_at(&location) {
-                println!("  Node at line 4: {} ('{}')", 
-                    node.kind, 
-                    node.text.lines().next().unwrap_or("").trim());
+                println!(
+                    "  Node at line 4: {} ('{}')",
+                    node.kind,
+                    node.text.lines().next().unwrap_or("").trim()
+                );
             }
-            
+
             // Test enclosing-function resolution
             match parser.get_containing_function(&location) {
                 Some(func) => println!("  Enclosing function at line 4: {}", func),
                 None => println!("  Enclosing function at line 4: <none>"),
             }
-            
+
             // Test context extraction
             if let Some(context) = parser.get_context(&location, 2, 2) {
                 println!("  Context around line 4:");
@@ -69,7 +75,7 @@ print(f"Total: {result}")
             println!("✗ Failed to parse: {}", e);
         }
     }
-    
+
     // Example 2: Parse JavaScript code
     println!("\n--- Example 2: JavaScript Code Parsing ---");
     let js_code = r#"
@@ -85,26 +91,31 @@ function processOrder(order) {
     return total;
 }
 "#;
-    
+
     let mut js_parser = AstParser::new(Language::JavaScript);
     match js_parser.parse(js_code.to_string()) {
         Ok(_) => {
             println!("✓ Successfully parsed JavaScript code");
-            
+
             if let Some(root) = js_parser.root_node() {
                 println!("  Root node type: {}", root.kind);
                 println!("  Number of children: {}", root.children.len());
-                
+
                 // Find the function
                 for child in &root.children {
                     if child.kind.contains("function") {
-                        println!("  Found function: {}", 
-                            child.metadata.get("name").unwrap_or(&"<anonymous>".to_string()));
+                        println!(
+                            "  Found function: {}",
+                            child
+                                .metadata
+                                .get("name")
+                                .unwrap_or(&"<anonymous>".to_string())
+                        );
                         println!("    Lines: {}-{}", child.start.line, child.end.line);
                     }
                 }
             }
-            
+
             // Resolve the enclosing function for a line inside the body.
             let js_location = SourceLocation::new("test.js".to_string(), 3, 8);
             match js_parser.get_containing_function(&js_location) {
@@ -116,7 +127,7 @@ function processOrder(order) {
             println!("✗ Failed to parse: {}", e);
         }
     }
-    
+
     // Example 3: Parse Rust code
     println!("\n--- Example 3: Rust Code Parsing ---");
     let rust_code = r#"
@@ -133,17 +144,17 @@ pub fn main() {
     println!("Fibonacci(10) = {}", result);
 }
 "#;
-    
+
     let mut rust_parser = AstParser::new(Language::Rust);
     match rust_parser.parse(rust_code.to_string()) {
         Ok(_) => {
             println!("✓ Successfully parsed Rust code");
-            
+
             if let Some(root) = rust_parser.root_node() {
                 println!("  Root node type: {}", root.kind);
                 println!("  Number of top-level items: {}", root.children.len());
             }
-            
+
             // Resolve the enclosing function for a line inside fibonacci's body.
             let rust_location = SourceLocation::new("test.rs".to_string(), 3, 8);
             match rust_parser.get_containing_function(&rust_location) {
@@ -155,11 +166,11 @@ pub fn main() {
             println!("✗ Failed to parse: {}", e);
         }
     }
-    
+
     // Example 4: AST Cache Usage
     println!("\n--- Example 4: AST Cache ---");
     let mut cache = AstCache::new(Language::Python);
-    
+
     let simple_code = "x = 1\ny = 2\nz = x + y".to_string();
     match cache.get_parser("script.py", Some(simple_code)) {
         Ok(_parser) => {
@@ -169,7 +180,7 @@ pub fn main() {
             println!("✗ Failed to create cached parser: {}", e);
         }
     }
-    
+
     // Access again - should use cache
     match cache.get_parser("script.py", None) {
         Ok(_parser) => {
@@ -179,7 +190,7 @@ pub fn main() {
             println!("✗ Failed to retrieve cached parser: {}", e);
         }
     }
-    
+
     println!("\n✓ AST parsing examples complete!");
     println!("\n📝 Summary:");
     println!("  • Tree-sitter integration: ✅ Working");

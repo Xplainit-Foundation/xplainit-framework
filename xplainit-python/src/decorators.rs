@@ -24,7 +24,7 @@ def xplainit_wrapper(func):
             None,
             None,
         )?;
-        
+
         let wrapped = wrapper.call1((func,))?;
         Ok(wrapped.into())
     })
@@ -50,7 +50,7 @@ def xplainit_error_wrapper(func):
             None,
             None,
         )?;
-        
+
         let wrapped = wrapper.call1((func,))?;
         Ok(wrapped.into())
     })

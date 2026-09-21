@@ -43,8 +43,7 @@ impl Language {
 }
 
 /// Verbosity level for explanations
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Verbosity {
     /// Minimal explanations (single line)
     Brief,
@@ -57,10 +56,8 @@ pub enum Verbosity {
     Debug,
 }
 
-
 /// Output format for explanations
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum OutputFormat {
     /// Plain text to console
     Console,
@@ -75,10 +72,8 @@ pub enum OutputFormat {
     Markdown,
 }
 
-
 /// Output destination
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum OutputDestination {
     /// Standard output
     #[default]
@@ -93,10 +88,8 @@ pub enum OutputDestination {
     Multiple(Vec<OutputDestination>),
 }
 
-
 /// Output mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum OutputMode {
     /// Output in real-time as events occur
     #[default]
@@ -107,64 +100,63 @@ pub enum OutputMode {
     Manual,
 }
 
-
 /// Main configuration for Xplainit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Programming language being traced
     pub language: Language,
-    
+
     /// Verbosity level
     pub verbosity: Verbosity,
-    
+
     /// Output format
     pub output_format: OutputFormat,
-    
+
     /// Output destination
     pub output_destination: OutputDestination,
-    
+
     /// Output mode
     pub output_mode: OutputMode,
-    
+
     /// Show line numbers in output
     pub show_line_numbers: bool,
-    
+
     /// Show source code snippets
     pub show_source_code: bool,
-    
+
     /// Use colored output
     pub color_output: bool,
-    
+
     /// Maximum recursion depth to trace
     pub max_depth: usize,
-    
+
     /// Track variable values
     pub track_variables: bool,
-    
+
     /// Track function calls
     pub track_function_calls: bool,
-    
+
     /// Track control flow (if/else, loops)
     pub track_control_flow: bool,
-    
+
     /// Capture and explain errors
     pub capture_errors: bool,
-    
+
     /// Include timestamps in output
     pub include_timestamps: bool,
-    
+
     /// Include thread/task IDs
     pub include_thread_info: bool,
-    
+
     /// Filter: only trace these functions (empty = trace all)
     pub include_functions: Vec<String>,
-    
+
     /// Filter: exclude these functions
     pub exclude_functions: Vec<String>,
-    
+
     /// Filter: only trace these modules
     pub include_modules: Vec<String>,
-    
+
     /// Filter: exclude these modules (e.g., standard library)
     pub exclude_modules: Vec<String>,
 }
@@ -203,54 +195,54 @@ impl Config {
             ..Default::default()
         }
     }
-    
+
     /// Builder method: set verbosity
     pub fn with_verbosity(mut self, verbosity: Verbosity) -> Self {
         self.verbosity = verbosity;
         self
     }
-    
+
     /// Builder method: set output format
     pub fn with_output_format(mut self, format: OutputFormat) -> Self {
         self.output_format = format;
         self
     }
-    
+
     /// Builder method: set output destination
     pub fn with_output_destination(mut self, dest: OutputDestination) -> Self {
         self.output_destination = dest;
         self
     }
-    
+
     /// Builder method: set output mode
     pub fn with_output_mode(mut self, mode: OutputMode) -> Self {
         self.output_mode = mode;
         self
     }
-    
+
     /// Builder method: set max depth
     pub fn with_max_depth(mut self, depth: usize) -> Self {
         self.max_depth = depth;
         self
     }
-    
+
     /// Load config from environment variables
     pub fn from_env() -> Self {
         let mut config = Config::default();
-        
+
         // Read XPLAINIT_* environment variables
         if let Ok(enabled) = std::env::var("XPLAINIT_ENABLED") {
             if enabled.to_lowercase() == "false" || enabled == "0" {
                 // Config loaded but disabled - handled by caller
             }
         }
-        
+
         if let Ok(lang) = std::env::var("XPLAINIT_LANGUAGE") {
             if let Some(language) = Language::parse(&lang) {
                 config.language = language;
             }
         }
-        
+
         if let Ok(verb) = std::env::var("XPLAINIT_VERBOSITY") {
             config.verbosity = match verb.to_lowercase().as_str() {
                 "brief" => Verbosity::Brief,
@@ -260,7 +252,7 @@ impl Config {
                 _ => Verbosity::Normal,
             };
         }
-        
+
         if let Ok(output) = std::env::var("XPLAINIT_OUTPUT") {
             config.output_destination = match output.to_lowercase().as_str() {
                 "stdout" => OutputDestination::Stdout,
@@ -268,7 +260,7 @@ impl Config {
                 _ => OutputDestination::File(PathBuf::from(output)),
             };
         }
-        
+
         config
     }
 }
@@ -291,7 +283,7 @@ mod tests {
         let config = Config::new(Language::Python)
             .with_verbosity(Verbosity::Detailed)
             .with_max_depth(50);
-        
+
         assert_eq!(config.language, Language::Python);
         assert_eq!(config.verbosity, Verbosity::Detailed);
         assert_eq!(config.max_depth, 50);

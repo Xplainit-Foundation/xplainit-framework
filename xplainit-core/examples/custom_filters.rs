@@ -1,28 +1,28 @@
 //! Example demonstrating various event filtering strategies
-//! 
+//!
 //! This example shows how to use different filters to control
 //! which events are captured and explained.
 
-use xplainit_core::*;
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 use uuid::Uuid;
+use xplainit_core::*;
 
 fn main() {
     println!("=== Xplainit Core - Custom Filters Example ===\n");
-    
+
     // Example 1: Accept All Filter
     example_accept_all();
-    
+
     // Example 2: Function Filter
     example_function_filter();
-    
+
     // Example 3: Event Type Filter
     example_event_type_filter();
-    
+
     // Example 4: Depth Filter
     example_depth_filter();
-    
+
     println!("\n✓ All filter examples complete!");
 }
 
@@ -31,9 +31,9 @@ fn example_accept_all() {
     println!("--- Example 1: Accept All Filter ---");
     let filter = AcceptAllFilter;
     let config = Config::new(Language::Python);
-    
+
     let events = create_test_events();
-    
+
     println!("  Capturing with AcceptAllFilter:");
     for event in &events {
         if filter.should_capture(event, &config) {
@@ -47,24 +47,24 @@ fn example_function_filter() {
     println!("\n--- Example 2: Function Filter ---");
     let config = Config::new(Language::Python);
     let events = create_test_events();
-    
+
     // Include specific functions
     let include_filter = FunctionFilter::new()
         .include("process_order")
         .include("calculate_total");
-    
+
     println!("  Include filter (process_order, calculate_total):");
     for event in &events {
         if include_filter.should_capture(event, &config) {
             println!("    ✓ Captured: {}", event_type_name(event));
         }
     }
-    
+
     // Exclude specific functions
     let exclude_filter = FunctionFilter::new()
         .exclude("internal_helper")
         .exclude("debug_log");
-    
+
     println!("\n  Exclude filter (internal_helper, debug_log):");
     for event in &events {
         if exclude_filter.should_capture(event, &config) {
@@ -78,7 +78,7 @@ fn example_event_type_filter() {
     println!("\n--- Example 3: Event Type Filter ---");
     let config = Config::new(Language::Python);
     let events = create_test_events();
-    
+
     // Only capture errors
     let error_filter = EventTypeFilter::only_errors();
     println!("  Error filter (errors only):");
@@ -87,7 +87,7 @@ fn example_event_type_filter() {
             println!("    ✓ Captured: {}", event_type_name(event));
         }
     }
-    
+
     // Only capture functions
     let function_filter = EventTypeFilter::only_functions();
     println!("\n  Function filter (functions only):");
@@ -104,7 +104,7 @@ fn example_depth_filter() {
     let filter = DepthFilter::new(5); // Max depth of 5
     let config = Config::new(Language::Python);
     let events = create_test_events();
-    
+
     println!("  Depth filter (max depth: 5):");
     for event in &events {
         if filter.should_capture(event, &config) {
@@ -116,7 +116,7 @@ fn example_depth_filter() {
 // Helper: Create test events
 fn create_test_events() -> Vec<ExecutionEvent> {
     let loc = SourceLocation::new("test.py".to_string(), 10, 0);
-    
+
     vec![
         ExecutionEvent::FunctionEnter {
             id: Uuid::new_v4(),

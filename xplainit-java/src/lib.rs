@@ -2,9 +2,9 @@
 //!
 //! This module provides JNI (Java Native Interface) bindings for the Xplainit Framework
 
-use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring};
+use jni::JNIEnv;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -193,18 +193,19 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeGetEvents(
     handle: jlong,
 ) -> jstring {
     if handle == 0 {
-        return env.new_string("[]")
+        return env
+            .new_string("[]")
             .expect("Couldn't create java string!")
             .into_raw();
     }
-    
+
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         let runtime = runtime_ref.runtime.lock().unwrap();
         let events = runtime.get_events();
-        
+
         let json = serde_json::to_string(&events).unwrap_or_else(|_| "[]".to_string());
-        
+
         env.new_string(json)
             .expect("Couldn't create java string!")
             .into_raw()
@@ -221,7 +222,7 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeClearEvents(
     if handle == 0 {
         return 0;
     }
-    
+
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         let runtime = runtime_ref.runtime.lock().unwrap();
@@ -238,34 +239,35 @@ pub extern "system" fn Java_io_xplainit_Xplainit_nativeGetStatistics(
     handle: jlong,
 ) -> jstring {
     if handle == 0 {
-        return env.new_string("{\"total_events\":0,\"function_calls\":0,\"errors\":0}")
+        return env
+            .new_string("{\"total_events\":0,\"function_calls\":0,\"errors\":0}")
             .expect("Couldn't create java string!")
             .into_raw();
     }
-    
+
     unsafe {
         let runtime_ref = &*(handle as *const RuntimeHandle);
         let runtime = runtime_ref.runtime.lock().unwrap();
         let events = runtime.get_events();
-        
+
         let total = events.len();
         let mut fn_count = 0;
         let mut err_count = 0;
-        
+
         for event in events {
             match event {
-                xplainit_core::ExecutionEvent::FunctionEnter { .. } |
-                xplainit_core::ExecutionEvent::FunctionExit { .. } => fn_count += 1,
+                xplainit_core::ExecutionEvent::FunctionEnter { .. }
+                | xplainit_core::ExecutionEvent::FunctionExit { .. } => fn_count += 1,
                 e if e.is_error() => err_count += 1,
                 _ => {}
             }
         }
-        
+
         let stats = format!(
             r#"{{"total_events":{},"function_calls":{},"errors":{}}}"#,
             total, fn_count, err_count
         );
-        
+
         env.new_string(stats)
             .expect("Couldn't create java string!")
             .into_raw()
@@ -505,9 +507,7 @@ mod tests {
     fn test_build_method_enter_event() {
         let event = build_method_enter_event("fibonacci", "io/xplainit/examples/BasicExample", 42);
         match event {
-            ExecutionEvent::FunctionEnter {
-                name, location, ..
-            } => {
+            ExecutionEvent::FunctionEnter { name, location, .. } => {
                 assert_eq!(name, "fibonacci");
                 assert_eq!(location.file, "io/xplainit/examples/BasicExample");
                 assert_eq!(location.line, 42);

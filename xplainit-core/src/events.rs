@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Source code location
@@ -22,7 +22,7 @@ impl SourceLocation {
             offset: 0,
         }
     }
-    
+
     pub fn unknown() -> Self {
         Self {
             file: "<unknown>".to_string(),
@@ -84,7 +84,6 @@ pub enum LoopExitReason {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ExecutionEvent {
     // ===== Normal Execution Events =====
-    
     /// Function entry
     FunctionEnter {
         id: Uuid,
@@ -93,7 +92,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Function exit
     FunctionExit {
         id: Uuid,
@@ -102,7 +101,7 @@ pub enum ExecutionEvent {
         duration: Duration,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Variable declaration
     VariableDeclaration {
         id: Uuid,
@@ -113,7 +112,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Variable assignment
     VariableAssign {
         id: Uuid,
@@ -123,7 +122,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Conditional evaluation (if, else if, etc.)
     ConditionalEval {
         id: Uuid,
@@ -133,7 +132,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Loop entry
     LoopEntry {
         id: Uuid,
@@ -142,7 +141,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Loop iteration
     LoopIteration {
         id: Uuid,
@@ -152,7 +151,7 @@ pub enum ExecutionEvent {
         loop_var_value: Option<Value>,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Loop exit
     LoopExit {
         id: Uuid,
@@ -161,7 +160,7 @@ pub enum ExecutionEvent {
         reason: LoopExitReason,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Return statement
     Return {
         id: Uuid,
@@ -169,9 +168,8 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     // ===== Error and Exception Events =====
-    
     /// Generic exception/error raised
     Exception {
         id: Uuid,
@@ -182,7 +180,7 @@ pub enum ExecutionEvent {
         caught: bool,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Syntax error (before execution)
     SyntaxError {
         id: Uuid,
@@ -192,7 +190,7 @@ pub enum ExecutionEvent {
         suggestion: Option<String>,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Runtime error during execution
     RuntimeError {
         id: Uuid,
@@ -203,7 +201,7 @@ pub enum ExecutionEvent {
         stack_trace: Vec<StackFrame>,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Type error
     TypeError {
         id: Uuid,
@@ -214,7 +212,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Null/None/undefined access error
     NullPointerError {
         id: Uuid,
@@ -223,7 +221,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Index out of bounds
     IndexOutOfBounds {
         id: Uuid,
@@ -233,7 +231,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Division by zero
     DivisionByZero {
         id: Uuid,
@@ -242,7 +240,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Stack overflow (recursion limit)
     StackOverflow {
         id: Uuid,
@@ -251,7 +249,7 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Panic/abort
     Panic {
         id: Uuid,
@@ -260,9 +258,8 @@ pub enum ExecutionEvent {
         stack_trace: Vec<StackFrame>,
         timestamp: DateTime<Utc>,
     },
-    
+
     // ===== Special Detection Events =====
-    
     /// Infinite loop detected
     InfiniteLoopDetected {
         id: Uuid,
@@ -271,14 +268,14 @@ pub enum ExecutionEvent {
         location: SourceLocation,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Deadlock detected
     DeadlockDetected {
         id: Uuid,
         threads: Vec<String>,
         timestamp: DateTime<Utc>,
     },
-    
+
     /// Memory leak detected
     MemoryLeakDetected {
         id: Uuid,
@@ -315,7 +312,7 @@ impl ExecutionEvent {
             ExecutionEvent::MemoryLeakDetected { id, .. } => id,
         }
     }
-    
+
     /// Get the event's timestamp
     pub fn timestamp(&self) -> &DateTime<Utc> {
         match self {
@@ -342,7 +339,7 @@ impl ExecutionEvent {
             ExecutionEvent::MemoryLeakDetected { timestamp, .. } => timestamp,
         }
     }
-    
+
     /// Check if this event represents an error
     pub fn is_error(&self) -> bool {
         matches!(
@@ -361,7 +358,7 @@ impl ExecutionEvent {
                 | ExecutionEvent::MemoryLeakDetected { .. }
         )
     }
-    
+
     /// Get the event's source location
     pub fn location(&self) -> SourceLocation {
         match self {
@@ -388,7 +385,7 @@ impl ExecutionEvent {
             ExecutionEvent::MemoryLeakDetected { .. } => SourceLocation::unknown(),
         }
     }
-    
+
     /// Get event type name
     pub fn event_type(&self) -> &'static str {
         match self {
@@ -438,9 +435,9 @@ mod tests {
             location: SourceLocation::unknown(),
             timestamp: Utc::now(),
         };
-        
+
         assert!(!normal_event.is_error());
-        
+
         let error_event = ExecutionEvent::DivisionByZero {
             id: Uuid::new_v4(),
             numerator: Value::Integer(10),
@@ -448,7 +445,7 @@ mod tests {
             location: SourceLocation::unknown(),
             timestamp: Utc::now(),
         };
-        
+
         assert!(error_event.is_error());
     }
 }

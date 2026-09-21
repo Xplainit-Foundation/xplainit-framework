@@ -1,9 +1,9 @@
 //! Event Pipeline - ties filters, processors, and sinks together
 
-use crate::{ExecutionEvent, Result, Config};
 use crate::filter::EventFilter;
 use crate::processor::ProcessorPipeline;
 use crate::sink::EventSink;
+use crate::{Config, ExecutionEvent, Result};
 
 /// Pipeline that accepts events, filters, processes, and sinks them
 pub struct EventPipeline {
@@ -14,7 +14,11 @@ pub struct EventPipeline {
 
 impl EventPipeline {
     pub fn new(filter: Box<dyn EventFilter>, processors: ProcessorPipeline) -> Self {
-        Self { filter, processors, sinks: Vec::new() }
+        Self {
+            filter,
+            processors,
+            sinks: Vec::new(),
+        }
     }
 
     pub fn add_sink(mut self, sink: Box<dyn EventSink>) -> Self {
@@ -49,10 +53,10 @@ impl EventPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Config};
     use crate::filter::AcceptAllFilter;
     use crate::processor::PassThroughProcessor;
     use crate::sink::MemorySink;
+    use crate::Config;
     use crate::SourceLocation;
     use chrono::Utc;
     use std::collections::HashMap;
@@ -65,14 +69,19 @@ mod tests {
         // Clone the memory sink so we can both insert into pipeline and inspect the original
         let mem_clone = mem.clone();
         let mem_box: Box<dyn crate::sink::EventSink> = Box::new(mem_clone);
-        
+
         let mut pipeline = EventPipeline::new(filter, processors).add_sink(mem_box);
         let config = Config::new(crate::Language::Python);
 
         let event = crate::ExecutionEvent::FunctionEnter {
             id: uuid::Uuid::new_v4(),
             timestamp: Utc::now(),
-            location: SourceLocation { file: "t".into(), line: 1, column: 0, offset: 0 },
+            location: SourceLocation {
+                file: "t".into(),
+                line: 1,
+                column: 0,
+                offset: 0,
+            },
             name: "f".into(),
             args: HashMap::new(),
         };

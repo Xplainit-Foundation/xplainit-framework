@@ -6,31 +6,31 @@ pub enum XplainitError {
     /// Parse error occurred
     #[error("Parse error: {0}")]
     ParseError(String),
-    
+
     /// Analysis error occurred
     #[error("Analysis error: {0}")]
     AnalysisError(String),
-    
+
     /// Unsupported language
     #[error("Unsupported language: {0}")]
     UnsupportedLanguage(String),
-    
+
     /// Invalid configuration
     #[error("Invalid configuration: {0}")]
     ConfigError(String),
-    
+
     /// IO error
     #[error("IO error: {0}")]
     IoError(String),
-    
+
     /// Event capture error
     #[error("Event capture error: {0}")]
     EventCaptureError(String),
-    
+
     /// Explanation generation error
     #[error("Explanation generation error: {0}")]
     ExplanationError(String),
-    
+
     /// Internal framework error (should never happen)
     #[error("Internal error: {0}")]
     InternalError(String),

@@ -46,14 +46,14 @@ pub extern "C" fn xplainit_create() -> *mut XplainitHandle {
     let config = Config::new(Language::C)
         .with_verbosity(Verbosity::Normal)
         .with_output_format(OutputFormat::Json);
-    
+
     let runtime = RuntimeEngine::new(config);
-    
+
     let handle = Box::new(XplainitHandle {
         runtime: Arc::new(Mutex::new(runtime)),
         enabled: AtomicBool::new(true),
     });
-    
+
     Box::into_raw(handle)
 }
 
@@ -84,7 +84,7 @@ pub unsafe extern "C" fn xplainit_enable(handle: *mut XplainitHandle) -> i32 {
     if handle.is_null() {
         return 0;
     }
-    
+
     let handle = &*handle;
     handle.enabled.store(true, Ordering::SeqCst);
     1
@@ -105,7 +105,7 @@ pub unsafe extern "C" fn xplainit_disable(handle: *mut XplainitHandle) -> i32 {
     if handle.is_null() {
         return 0;
     }
-    
+
     let handle = &*handle;
     handle.enabled.store(false, Ordering::SeqCst);
     1
@@ -126,7 +126,7 @@ pub unsafe extern "C" fn xplainit_is_enabled(handle: *mut XplainitHandle) -> i32
     if handle.is_null() {
         return 0;
     }
-    
+
     let handle = &*handle;
     if handle.enabled.load(Ordering::SeqCst) {
         1
@@ -151,13 +151,13 @@ pub unsafe extern "C" fn xplainit_get_events(handle: *mut XplainitHandle) -> *mu
     if handle.is_null() {
         return ptr::null_mut();
     }
-    
+
     let handle = &*handle;
     let runtime = handle.runtime.lock().unwrap();
     let events = runtime.get_events();
-    
+
     let json = serde_json::to_string(&events).unwrap_or_else(|_| "[]".to_string());
-    
+
     match CString::new(json) {
         Ok(c_str) => c_str.into_raw(),
         Err(_) => ptr::null_mut(),
@@ -179,11 +179,11 @@ pub unsafe extern "C" fn xplainit_clear_events(handle: *mut XplainitHandle) -> i
     if handle.is_null() {
         return 0;
     }
-    
+
     let handle = &*handle;
     let runtime = handle.runtime.lock().unwrap();
     runtime.clear_events();
-    
+
     1
 }
 
@@ -211,26 +211,26 @@ pub unsafe extern "C" fn xplainit_get_statistics(
     if handle.is_null() {
         return 0;
     }
-    
+
     let handle = &*handle;
     let runtime = handle.runtime.lock().unwrap();
     let events = runtime.get_events();
-    
+
     let total = events.len();
     let mut fn_count = 0;
     let mut err_count = 0;
-    
+
     for event in events {
         match event {
-            xplainit_core::ExecutionEvent::FunctionEnter { .. } |
-            xplainit_core::ExecutionEvent::FunctionExit { .. } => fn_count += 1,
-            xplainit_core::ExecutionEvent::DivisionByZero { .. } |
-            xplainit_core::ExecutionEvent::NullPointerError { .. } |
-            xplainit_core::ExecutionEvent::IndexOutOfBounds { .. } => err_count += 1,
+            xplainit_core::ExecutionEvent::FunctionEnter { .. }
+            | xplainit_core::ExecutionEvent::FunctionExit { .. } => fn_count += 1,
+            xplainit_core::ExecutionEvent::DivisionByZero { .. }
+            | xplainit_core::ExecutionEvent::NullPointerError { .. }
+            | xplainit_core::ExecutionEvent::IndexOutOfBounds { .. } => err_count += 1,
             _ => {}
         }
     }
-    
+
     if !total_events.is_null() {
         *total_events = total;
     }
@@ -240,7 +240,7 @@ pub unsafe extern "C" fn xplainit_get_statistics(
     if !errors.is_null() {
         *errors = err_count;
     }
-    
+
     1
 }
 
@@ -459,17 +459,17 @@ mod tests {
             let mut total: usize = 0;
             let mut functions: usize = 0;
             let mut errors: usize = 0;
-            
+
             let result = xplainit_get_statistics(
                 handle,
                 &mut total as *mut usize,
                 &mut functions as *mut usize,
                 &mut errors as *mut usize,
             );
-            
+
             assert_eq!(result, 1);
             assert_eq!(total, 0);
-            
+
             xplainit_free(handle);
         }
     }
@@ -599,7 +599,12 @@ mod tests {
             );
 
             let mut total: usize = 0;
-            xplainit_get_statistics(handle, &mut total as *mut usize, ptr::null_mut(), ptr::null_mut());
+            xplainit_get_statistics(
+                handle,
+                &mut total as *mut usize,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            );
             assert_eq!(total, 0);
 
             xplainit_free(handle);
@@ -620,7 +625,13 @@ mod tests {
                 0
             );
             assert_eq!(
-                xplainit_on_exception(ptr::null_mut(), name.as_ptr(), name.as_ptr(), file.as_ptr(), 1),
+                xplainit_on_exception(
+                    ptr::null_mut(),
+                    name.as_ptr(),
+                    name.as_ptr(),
+                    file.as_ptr(),
+                    1
+                ),
                 0
             );
         }

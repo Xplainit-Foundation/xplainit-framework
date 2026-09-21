@@ -1,5 +1,5 @@
 //! Runtime Engine - Core orchestrator for event collection and processing
-//! 
+//!
 //! The RuntimeEngine is the central component that:
 //! - Manages event collectors
 //! - Processes events through the pipeline
@@ -7,9 +7,9 @@
 //! - Handles configuration and lifecycle
 
 use crate::{
-    Config, EventStore, ExecutionEvent, Result, XplainitError,
-    collector::{EventCollector, CollectionTarget, CollectorStats},
+    collector::{CollectionTarget, CollectorStats, EventCollector},
     pipeline::EventPipeline,
+    Config, EventStore, ExecutionEvent, Result, XplainitError,
 };
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -18,16 +18,16 @@ use std::sync::Arc;
 pub struct RuntimeEngine {
     /// Configuration
     config: Arc<RwLock<Config>>,
-    
+
     /// Event storage
     event_store: EventStore,
-    
+
     /// Active collector (set when tracing is active)
     active_collector: Arc<RwLock<Option<Box<dyn EventCollector>>>>,
-    
+
     /// Event pipeline (filter -> processor -> sink)
     pipeline: Arc<RwLock<Option<EventPipeline>>>,
-    
+
     /// Engine state
     state: Arc<RwLock<EngineState>>,
 }
@@ -37,13 +37,13 @@ pub struct RuntimeEngine {
 pub enum EngineState {
     /// Engine is idle, not collecting events
     Idle,
-    
+
     /// Engine is actively collecting events
     Collecting,
-    
+
     /// Engine is paused (can be resumed)
     Paused,
-    
+
     /// Engine has encountered an error
     Error { message: String },
 }
@@ -59,7 +59,7 @@ impl RuntimeEngine {
             state: Arc::new(RwLock::new(EngineState::Idle)),
         }
     }
-    
+
     /// Set the event pipeline
     pub fn set_pipeline(&self, pipeline: EventPipeline) {
         let mut p = self.pipeline.write();
@@ -77,7 +77,7 @@ impl RuntimeEngine {
             let state = self.state.read();
             if *state == EngineState::Collecting {
                 return Err(XplainitError::InternalError(
-                    "Engine is already collecting events".into()
+                    "Engine is already collecting events".into(),
                 ));
             }
         }
@@ -128,7 +128,7 @@ impl RuntimeEngine {
             Ok(())
         } else {
             Err(XplainitError::InternalError(
-                "Cannot pause: engine is not collecting".into()
+                "Cannot pause: engine is not collecting".into(),
             ))
         }
     }
@@ -141,7 +141,7 @@ impl RuntimeEngine {
             Ok(())
         } else {
             Err(XplainitError::InternalError(
-                "Cannot resume: engine is not paused".into()
+                "Cannot resume: engine is not paused".into(),
             ))
         }
     }
@@ -170,7 +170,7 @@ impl RuntimeEngine {
         let config = self.config.read().clone();
         for event in &events {
             self.event_store.record(event.clone());
-            
+
             // Route through pipeline if configured
             if let Some(ref mut pipeline) = *self.pipeline.write() {
                 let _ = pipeline.handle_event(event.clone(), &config);

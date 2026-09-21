@@ -1,7 +1,7 @@
 //! # Xplainit Core
 //!
 //! Core runtime instrumentation engine for the Xplainit framework.
-//! 
+//!
 //! This library provides the foundational types and traits for capturing
 //! runtime execution events and generating human-readable explanations.
 //!
@@ -24,65 +24,55 @@
 //! let explainer = Explainer::new(config);
 //! ```
 
-pub mod error;
-pub mod config;
-pub mod events;
-pub mod event_store;
-pub mod collector;
-pub mod runtime;
-pub mod filter;
 pub mod advanced_filter;
-pub mod processor;
-pub mod sink;
-pub mod pipeline;
 pub mod ast;
-pub mod explainer;
+pub mod collector;
+pub mod config;
 pub mod control;
+pub mod error;
 pub mod error_explainer;
+pub mod event_store;
+pub mod events;
+pub mod explainer;
+pub mod filter;
 pub mod formatter;
+pub mod pipeline;
+pub mod processor;
+pub mod runtime;
+pub mod sink;
 
 // Re-export commonly used types
-pub use error::{XplainitError, Result};
-pub use config::{
-    Config, Language, Verbosity, OutputFormat, 
-    OutputDestination, OutputMode
-};
-pub use events::{
-    ExecutionEvent, SourceLocation, Value, StackFrame, LoopExitReason
-};
-pub use event_store::{EventStore, EventStats};
-pub use collector::{
-    EventCollector, CollectionTarget, CollectorConfig, 
-    CollectorStats, BaseCollector
-};
-pub use runtime::{RuntimeEngine, EngineState};
-pub use filter::{
-    EventFilter, AcceptAllFilter, FunctionFilter, 
-    EventTypeFilter, DepthFilter, CompositeFilter
-};
 pub use advanced_filter::{
-    ModuleFilter, RegexFilter, CallStackFilter, 
-    PerformanceFilter, AdvancedFilter
+    AdvancedFilter, CallStackFilter, ModuleFilter, PerformanceFilter, RegexFilter,
 };
-pub use processor::{
-    EventProcessor, PassThroughProcessor, EnrichmentProcessor,
-    DeduplicationProcessor, RateLimitProcessor, ProcessorPipeline
+pub use ast::{AstCache, AstNode, AstParser};
+pub use collector::{
+    BaseCollector, CollectionTarget, CollectorConfig, CollectorStats, EventCollector,
 };
-pub use sink::{
-    EventSink, ConsoleSink, FileSink, MemorySink, MultiSink
+pub use config::{Config, Language, OutputDestination, OutputFormat, OutputMode, Verbosity};
+pub use control::{safe_execute, RuntimeControl, ScopedControl};
+pub use error::{Result, XplainitError};
+pub use error_explainer::{ErrorAnalysis, ErrorCategory, ErrorExplainer, ErrorSeverity};
+pub use event_store::{EventStats, EventStore};
+pub use events::{ExecutionEvent, LoopExitReason, SourceLocation, StackFrame, Value};
+pub use explainer::{ExplanationGenerator, VerbosityLevel};
+pub use filter::{
+    AcceptAllFilter, CompositeFilter, DepthFilter, EventFilter, EventTypeFilter, FunctionFilter,
+};
+pub use formatter::{
+    FormatterFactory, HtmlFormatter, JsonFormatter, MarkdownFormatter, OutputFormatter,
+    TextFormatter,
 };
 pub use pipeline::EventPipeline;
-pub use ast::{AstNode, AstParser, AstCache};
-pub use explainer::{ExplanationGenerator, VerbosityLevel};
-pub use control::{RuntimeControl, ScopedControl, safe_execute};
-pub use error_explainer::{ErrorExplainer, ErrorAnalysis, ErrorSeverity, ErrorCategory};
-pub use formatter::{
-    OutputFormatter, TextFormatter, JsonFormatter, 
-    HtmlFormatter, MarkdownFormatter, FormatterFactory
+pub use processor::{
+    DeduplicationProcessor, EnrichmentProcessor, EventProcessor, PassThroughProcessor,
+    ProcessorPipeline, RateLimitProcessor,
 };
+pub use runtime::{EngineState, RuntimeEngine};
+pub use sink::{ConsoleSink, EventSink, FileSink, MemorySink, MultiSink};
 
-use std::sync::Arc;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Main Explainer interface
 pub struct Explainer {
@@ -98,46 +88,46 @@ impl Explainer {
             enabled: Arc::new(RwLock::new(true)),
         }
     }
-    
+
     /// Create a new Explainer for a specific language with default config
     pub fn with_language(language: Language) -> Self {
         Self::new(Config::new(language))
     }
-    
+
     /// Create from environment variables
     pub fn from_env() -> Self {
         let config = Config::from_env();
         let enabled = std::env::var("XPLAINIT_ENABLED")
             .map(|v| v.to_lowercase() != "false" && v != "0")
             .unwrap_or(true);
-        
+
         Self {
             config: Arc::new(RwLock::new(config)),
             enabled: Arc::new(RwLock::new(enabled)),
         }
     }
-    
+
     /// Check if tracing is enabled
     #[inline(always)]
     pub fn is_enabled(&self) -> bool {
         *self.enabled.read()
     }
-    
+
     /// Enable tracing
     pub fn enable(&self) {
         *self.enabled.write() = true;
     }
-    
+
     /// Disable tracing
     pub fn disable(&self) {
         *self.enabled.write() = false;
     }
-    
+
     /// Get current configuration (read-only copy)
     pub fn config(&self) -> Config {
         self.config.read().clone()
     }
-    
+
     /// Update configuration
     pub fn update_config<F>(&self, f: F)
     where
@@ -146,12 +136,12 @@ impl Explainer {
         let mut config = self.config.write();
         f(&mut config);
     }
-    
+
     /// Get a clone of the config Arc for sharing
     pub fn config_arc(&self) -> Arc<RwLock<Config>> {
         Arc::clone(&self.config)
     }
-    
+
     /// Get a clone of the enabled Arc for sharing
     pub fn enabled_arc(&self) -> Arc<RwLock<bool>> {
         Arc::clone(&self.enabled)
@@ -214,10 +204,10 @@ mod tests {
     fn test_enable_disable() {
         let explainer = Explainer::default();
         assert!(explainer.is_enabled());
-        
+
         explainer.disable();
         assert!(!explainer.is_enabled());
-        
+
         explainer.enable();
         assert!(explainer.is_enabled());
     }
@@ -225,12 +215,12 @@ mod tests {
     #[test]
     fn test_config_update() {
         let explainer = Explainer::default();
-        
+
         explainer.update_config(|config| {
             config.verbosity = Verbosity::Detailed;
             config.max_depth = 50;
         });
-        
+
         let config = explainer.config();
         assert_eq!(config.verbosity, Verbosity::Detailed);
         assert_eq!(config.max_depth, 50);
@@ -240,7 +230,7 @@ mod tests {
     fn test_clone() {
         let explainer1 = Explainer::with_language(Language::Python);
         let explainer2 = explainer1.clone();
-        
+
         explainer1.disable();
         assert!(!explainer2.is_enabled()); // Shares state
     }

@@ -7,15 +7,15 @@
 // generated code we do not control, so silence the lint crate-wide.
 #![allow(clippy::useless_conversion)]
 
+use parking_lot::RwLock;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use xplainit_core::*;
-use std::sync::Arc;
 use std::collections::HashMap;
-use parking_lot::RwLock;
+use std::sync::Arc;
+use xplainit_core::*;
 
-mod tracer;
 mod decorators;
+mod tracer;
 
 use tracer::PythonTracer;
 
@@ -31,12 +31,12 @@ fn xplainit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(explain_function, m)?)?;
     m.add_function(wrap_pyfunction!(get_last_explanation, m)?)?;
     m.add_function(wrap_pyfunction!(auto_trace, m)?)?;
-    
+
     Ok(())
 }
 
 /// Global Xplainit instance
-static GLOBAL_INSTANCE: once_cell::sync::Lazy<Arc<RwLock<Option<PythonTracer>>>> = 
+static GLOBAL_INSTANCE: once_cell::sync::Lazy<Arc<RwLock<Option<PythonTracer>>>> =
     once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(None)));
 
 /// Main Xplainit class for Python
@@ -52,58 +52,58 @@ impl Xplainit {
     fn new(enabled: bool, verbosity: &str, output: &str) -> PyResult<Self> {
         let config = create_config(verbosity, output);
         let tracer = PythonTracer::new(config, enabled);
-        
+
         Ok(Self {
             tracer: Arc::new(RwLock::new(tracer)),
         })
     }
-    
+
     /// Enable tracing
     fn enable(&self) {
         self.tracer.write().enable();
     }
-    
+
     /// Disable tracing
     fn disable(&self) {
         self.tracer.write().disable();
     }
-    
+
     /// Check if enabled
     fn is_enabled(&self) -> bool {
         self.tracer.read().is_enabled()
     }
-    
+
     /// Get all captured events as JSON
     fn get_events(&self) -> String {
         self.tracer.read().get_events_json()
     }
-    
+
     /// Get last explanation
     fn get_last_explanation(&self) -> String {
         self.tracer.read().get_last_explanation()
     }
-    
+
     /// Clear all events
     fn clear(&self) {
         self.tracer.write().clear();
     }
-    
+
     /// Set verbosity level
     fn set_verbosity(&self, level: &str) {
         self.tracer.write().set_verbosity(level);
     }
-    
+
     /// Get statistics
     fn get_stats(&self) -> String {
         self.tracer.read().get_stats()
     }
-    
+
     /// Get explanations for all captured events
     #[pyo3(signature = (verbosity=None))]
     fn get_explanations(&self, verbosity: Option<&str>) -> String {
         self.tracer.read().get_explanations(verbosity)
     }
-    
+
     /// Print explanations in real-time to console
     #[pyo3(signature = (verbosity=None))]
     fn print_explanations(&self, verbosity: Option<&str>) {
@@ -111,9 +111,9 @@ impl Xplainit {
         let explanations = self.tracer.read().get_explanations(Some(verb));
         println!("{}", explanations);
     }
-    
+
     // ===== sys.settrace() callback methods =====
-    
+
     /// Called when a function is entered (from Python tracer)
     fn on_function_enter(
         &self,
@@ -132,13 +132,13 @@ impl Xplainit {
                 }
             }
         }
-        
-        self.tracer.write().record_function_enter(
-            name, rust_args, filename, line
-        );
+
+        self.tracer
+            .write()
+            .record_function_enter(name, rust_args, filename, line);
         Ok(())
     }
-    
+
     /// Called when a function exits (from Python tracer)
     fn on_function_exit(
         &self,
@@ -148,13 +148,13 @@ impl Xplainit {
         line: usize,
     ) -> PyResult<()> {
         let val = tracer::parse_python_value(&return_value);
-        
-        self.tracer.write().record_function_exit(
-            name, Some(val), filename, line
-        );
+
+        self.tracer
+            .write()
+            .record_function_exit(name, Some(val), filename, line);
         Ok(())
     }
-    
+
     /// Called when an exception occurs (from Python tracer)
     fn on_exception(
         &self,
@@ -163,12 +163,12 @@ impl Xplainit {
         filename: String,
         line: usize,
     ) -> PyResult<()> {
-        self.tracer.write().record_exception(
-            exc_type, exc_message, filename, line
-        );
+        self.tracer
+            .write()
+            .record_exception(exc_type, exc_message, filename, line);
         Ok(())
     }
-    
+
     /// Called when a line is executed (from Python tracer) - optional
     fn on_line_execute(
         &self,
@@ -195,17 +195,17 @@ impl XplainitContext {
     fn new(enabled: bool, verbosity: &str) -> Self {
         let config = create_config(verbosity, "stdout");
         let tracer = PythonTracer::new(config, enabled);
-        
+
         Self {
             tracer: Arc::new(RwLock::new(tracer)),
         }
     }
-    
+
     fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         // Simply return self for the context manager protocol
         slf
     }
-    
+
     #[pyo3(signature = (_exc_type=None, _exc_value=None, _traceback=None))]
     fn __exit__(
         &self,
@@ -217,7 +217,7 @@ impl XplainitContext {
         self.tracer.write().disable();
         false // Don't suppress exceptions
     }
-    
+
     fn get_events(&self) -> String {
         self.tracer.read().get_events_json()
     }
@@ -233,7 +233,7 @@ fn py_enable(_py: Python) {
         let config = create_config("normal", "stdout");
         *global = Some(PythonTracer::new(config, true));
     }
-    
+
     if let Some(tracer) = global.as_mut() {
         tracer.enable();
     }
@@ -286,13 +286,13 @@ impl AutoTracer {
     #[pyo3(signature = (_backend=None))]
     fn new(_backend: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let xplainit = Xplainit::new(true, "normal", "stdout")?;
-        
+
         Ok(Self {
             xplainit,
             enabled: Arc::new(RwLock::new(false)),
         })
     }
-    
+
     /// Start automatic tracing
     fn start(&self) -> PyResult<()> {
         *self.enabled.write() = true;
@@ -301,29 +301,29 @@ impl AutoTracer {
         // This just marks the tracer as ready
         Ok(())
     }
-    
+
     /// Stop automatic tracing
     fn stop(&self) -> PyResult<()> {
         *self.enabled.write() = false;
         self.xplainit.disable();
         Ok(())
     }
-    
+
     /// Check if tracing is active
     fn is_active(&self) -> bool {
         *self.enabled.read()
     }
-    
+
     /// Get captured events
     fn get_events(&self) -> String {
         self.xplainit.get_events()
     }
-    
+
     /// Get statistics
     fn get_stats(&self) -> String {
         self.xplainit.get_stats()
     }
-    
+
     /// Pass-through callback for function enter
     fn on_function_enter(
         &self,
@@ -334,7 +334,7 @@ impl AutoTracer {
     ) -> PyResult<()> {
         self.xplainit.on_function_enter(name, args, filename, line)
     }
-    
+
     /// Pass-through callback for function exit
     fn on_function_exit(
         &self,
@@ -343,9 +343,10 @@ impl AutoTracer {
         filename: String,
         line: usize,
     ) -> PyResult<()> {
-        self.xplainit.on_function_exit(name, return_value, filename, line)
+        self.xplainit
+            .on_function_exit(name, return_value, filename, line)
     }
-    
+
     /// Pass-through callback for exceptions
     fn on_exception(
         &self,
@@ -354,7 +355,8 @@ impl AutoTracer {
         filename: String,
         line: usize,
     ) -> PyResult<()> {
-        self.xplainit.on_exception(exc_type, exc_message, filename, line)
+        self.xplainit
+            .on_exception(exc_type, exc_message, filename, line)
     }
 }
 
@@ -383,13 +385,13 @@ fn create_config(verbosity: &str, output: &str) -> Config {
         "debug" => Verbosity::Debug,
         _ => Verbosity::Normal,
     };
-    
+
     let output_dest = match output.to_lowercase().as_str() {
         "stdout" => OutputDestination::Stdout,
         "stderr" => OutputDestination::Stderr,
         path => OutputDestination::File(std::path::PathBuf::from(path)),
     };
-    
+
     Config::new(Language::Python)
         .with_verbosity(verb)
         .with_output_destination(output_dest)

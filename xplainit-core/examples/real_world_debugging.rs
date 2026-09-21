@@ -16,11 +16,11 @@
 //!
 //! Run with: cargo run --release --example real_world_debugging -p xplainit-core
 
-use xplainit_core::*;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;
+use xplainit_core::*;
 
 fn main() {
     println!("=== Xplainit Core - Real-World Debugging Example ===\n");
