@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-005",
+  "type": "feat",
+  "description": "Task 2.4 - Java runtime hook via a JVMTI agent + JNI. The JNI Rust layer (xplainit-java/src/lib.rs) exposes nativeCreate/free/enable/disable/getEvents/clear/statistics but has NO method-entry/exit recording path, and there is no native agent. Add JNI recording natives plus a JVMTI agent (native C compiled to a shared lib) that subscribes to MethodEntry/MethodExit (and exception) events and forwards them so a real `java -agentpath:...` run produces captured events. Toolchains javac/java 25.0.2 and gcc/clang are PRESENT and the JDK ships jvmti.h, so this is buildable in-sandbox (verify jvmti.h is found under JAVA_HOME/include). Depends on FEAT-001. Files: xplainit-java/src/lib.rs, xplainit-java/src/main/java/io/xplainit/Xplainit.java, new xplainit-java/native/agent.c (JVMTI agent), xplainit-java/examples/BasicExample.java, xplainit-java/pom.xml or a build script, xplainit-java/README.md.",
+  "status": "pending",
+  "steps": [
+    "Add JNI recording natives to xplainit-java/src/lib.rs: Java_io_xplainit_Xplainit_nativeOnMethodEnter(env, class, handle, jstring name, jstring signature/file, jint line), nativeOnMethodExit(...), and nativeOnException(...). Each converts the jstrings, builds the matching xplainit_core::ExecutionEvent, and records via event_store().record(...). Make nativeEnable/nativeDisable/nativeIsEnabled track a real enabled flag on the runtime handle so recording is gated (currently no-ops). Follow the existing null-handle + unsafe deref + lock pattern.",
+    "Add corresponding Java methods in io/xplainit/Xplainit.java (public wrappers onMethodEnter/onMethodExit/onException that call the natives) so both the agent (via JNI) and plain Java code can drive recording.",
+    "Write the JVMTI agent xplainit-java/native/agent.c: Agent_OnLoad requests can_generate_method_entry_events / method_exit_events capabilities, registers MethodEntry/MethodExit (and Exception) callbacks that read the method name/signature via GetMethodName and forward them to the recording path. Simplest robust wiring: the agent obtains the recording target through the JNI Xplainit class statics or a global handle set from Java at startup. Include filtering so JVM/bootstrap classes are not traced into oblivion (restrict to the demo package, mirroring the Python stdlib-exclusion idea). Compile against $JAVA_HOME/include and $JAVA_HOME/include/linux.",
+    "Provide a build script (or pom/maven profile) that: runs `cargo build --release` for libxplainit_java.so, compiles agent.c into libxplainit_agent.so with gcc `-shared -fPIC -I$JAVA_HOME/include -I$JAVA_HOME/include/linux`, and compiles the Java classes with javac. Detect JAVA_HOME robustly (e.g. from `readlink -f $(which javac)`).",
+    "Expand xplainit-java/examples/BasicExample.java with a simple method, a recursive method, and an exception-throwing method, then run it under `java -agentpath:<abs>/libxplainit_agent.so -cp <classes> io.xplainit.BasicExample`, and print captured events/statistics at the end. Assert (via exit code / grep of output) that events are non-empty and include the expected method names.",
+    "Add a Rust unit test in xplainit-java/src/lib.rs exercising the new recording natives' underlying logic where feasible (JNIEnv is hard to fake, so at minimum unit-test any pure helper you factor out, e.g. an event-building function that does not require JNIEnv; the real end-to-end proof is the agent run).",
+    "Update xplainit-java/README.md with the honest status and the exact `java -agentpath:` invocation. If any step cannot complete in-sandbox (e.g. jvmti.h missing), do NOT fake success: mark the feature blocked with retryable=false and a precise reason, and still land the buildable JNI recording natives + tests."
+  ],
+  "acceptance_criteria": [
+    "xplainit-java/src/lib.rs exposes method enter/exit/exception recording natives that actually record events, with enable/disable/is_enabled tracking a real flag.",
+    "A JVMTI agent (agent.c) compiles to libxplainit_agent.so and, when attached via -agentpath, captures real method events from BasicExample (simple + recursive + exception) - proven by running the example and asserting non-empty captured events with expected method names.",
+    "A build script builds libxplainit_java.so, the agent .so, and the Java classes, detecting JAVA_HOME correctly.",
+    "cargo build --release, cargo test, cargo clippy -D warnings all pass; Python suites remain green.",
+    "README states the honest status and the exact -agentpath invocation. If genuinely blocked by the sandbox, blocked_reason is set with a precise, verifiable reason."
+  ],
+  "verification": [
+    "cargo build --release",
+    "cargo test -p xplainit-java",
+    "cd xplainit-java && bash build_agent.sh  (or documented build script) then run: java -agentpath:$PWD/libxplainit_agent.so -cp <classes> io.xplainit.BasicExample",
+    "cargo clippy --all-targets --all-features -- -D warnings"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

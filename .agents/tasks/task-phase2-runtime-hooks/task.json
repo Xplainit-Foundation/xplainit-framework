@@ -1,0 +1,7 @@
+{
+  "task_id": "task-phase2-runtime-hooks",
+  "task_description": "Phase 2 (RUNTIME HOOKS) from PRODUCTION_READINESS_PLAN.md: implement automatic/real event capture from running code per language, driven one task at a time in order. FEAT-001 baseline; FEAT-002 Task 2.1 Python sys.settrace completion + depth-bug fix; FEAT-003 Task 2.2 Node.js hook (partial - no node/npm in sandbox); FEAT-004 Task 2.3 C/C++ -finstrument-functions hook; FEAT-005 Task 2.4 Java JVMTI agent; FEAT-006 Task 2.5 Go CGO/defer tracing (depends on FEAT-004). Verify empirically; never overstate completion. Work committed directly to master by the orchestrator (NOT via PR); coder commits on branch phase2-runtime-hooks.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005", "FEAT-006"],
+  "blocked_reason": null
+}

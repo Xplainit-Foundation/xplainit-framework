@@ -1,0 +1,35 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Task 2.1 - Complete and harden the Python runtime hook (sys.settrace). The core auto-tracing already works (verified: test_automatic_tracing.py 3/3, frame_filter 11/11). This feature closes the remaining Task 2.1 success criteria that are NOT yet satisfied and fixes a known pre-existing depth-accounting bug. Depends on FEAT-001. Files: xplainit-python/python/tracer.py, xplainit-python/src/lib.rs, xplainit-python/src/tracer.rs.",
+  "status": "pending",
+  "steps": [
+    "FIX THE DEPTH BUG in xplainit-python/python/tracer.py: `_should_trace` returns False at the top when `_get_depth() > max_depth`, but `_handle_call` increments depth and `_handle_return` decrements it. Because `_should_trace` runs for BOTH call and return events, once depth exceeds max_depth the matching return events are also filtered, so their `_handle_return` never runs and depth never decrements - it ratchets upward and wedges tracing off for the thread. Fix so depth accounting stays balanced. Recommended approach: do NOT gate depth accounting on `_should_trace`. Instead, in `_trace_callback`, always maintain depth for call/return of frames that pass the file/module filter (i.e. decrement on return unconditionally for frames we incremented on), and treat max_depth only as a decision to skip RECORDING (not to skip the return bookkeeping). Ensure a 'return' for a frame whose 'call' was counted always decrements exactly once. Keep the existing behavior that stdlib/self frames are never counted.",
+    "Add a regression test proving the depth fix: a test that traces a deeply-recursive function whose depth exceeds max_depth (set a small max_depth, e.g. 5), runs it, then runs a second simple traced call afterward and asserts the second call still produces events (i.e. tracing did not wedge off). Put it in a new test file xplainit-python/test_depth_accounting.py using the same self-asserting print-PASS/FAIL style as the other python test scripts, and also confirm depth returns to 0 after tracing a balanced call tree.",
+    "ARGUMENT VALUES: confirm actual argument values (not just counts) flow end to end. `_handle_call` already serializes each arg via `_serialize_value` and passes an args dict to `backend.on_function_enter`, which parses via parse_python_value into Value. Verify with a test that traces `add(a, b)` and asserts the captured FunctionEnter event JSON contains the real values (e.g. a=5, b=3), not just argument names. Extend _serialize_value / parse_python_value only if values are being lost (e.g. everything collapses to String). If integers currently round-trip as Value::Integer keep it; if not, improve the round-trip. Add assertions to test cases.",
+    "RETURN VALUES + EXCEPTIONS: add explicit test coverage that a traced function's return value appears in the FunctionExit event and that a ZeroDivisionError raised inside a traced function produces an Exception event with error_type='ZeroDivisionError'. These paths exist; the task is to prove them with real traces and fix if broken.",
+    "GENERATORS / ASYNC: add handling and tests for generator functions and async coroutines. Generators emit multiple call/return (resume/suspend) events through sys.settrace; ensure depth accounting stays balanced across yields and that events are still captured. For async, trace a simple `asyncio.run(coro())` where coro is user code and confirm the coroutine body is traced (note: asyncio internals are stdlib and correctly excluded). Document any inherent sys.settrace limitations discovered. Add these as cases in the python test scripts.",
+    "RECURSION: add an explicit recursive test case (e.g. fibonacci(6)) asserting multiple FunctionEnter/FunctionExit events for the recursive function are captured and depth returns to 0 at the end.",
+    "PERFORMANCE OVERHEAD CHECK: add a small benchmark (python script, e.g. xplainit-python/bench_overhead.py) that times a CPU-bound workload (e.g. summing/recursion) with tracing disabled vs enabled and prints the overhead ratio. The <10% target from the plan is aspirational for full call tracing and will almost certainly NOT be met for fine-grained sys.settrace tracing; do NOT fake it. Report the real measured overhead honestly in findings and note that <10% requires sampling/selective tracing (already supported via sampling_rate/include_modules). The benchmark just needs to run and print a real number.",
+    "Rebuild with `maturin develop --release` from inside xplainit-python and run all python test scripts plus the new ones."
+  ],
+  "acceptance_criteria": [
+    "The depth-accounting bug is fixed: after tracing a call tree whose depth exceeds max_depth, subsequent traced calls still capture events, and depth returns to 0 after a balanced call tree. New test_depth_accounting.py passes.",
+    "A test proves argument VALUES (real values, e.g. a=5,b=3) appear in captured FunctionEnter events, not just names/counts.",
+    "A test proves return values appear in FunctionExit and a ZeroDivisionError produces an Exception event with the correct error_type.",
+    "Generator and async coroutine user code is traced with balanced depth accounting; recursive function (e.g. fibonacci) produces the expected multiple events.",
+    "bench_overhead.py runs and prints a real measured overhead number; findings honestly state the measured overhead and whether the <10% target is met (and how sampling/selective tracing relates to it).",
+    "cargo test, cargo clippy -D warnings, python test_automatic_tracing.py (3/3), test_frame_filter.py (11/11), test_decorators.py all still pass."
+  ],
+  "verification": [
+    "cd xplainit-python && source ../.venv/bin/activate && maturin develop --release",
+    "cd .. && source .venv/bin/activate && python test_automatic_tracing.py",
+    "python xplainit-python/test_frame_filter.py",
+    "python xplainit-python/test_decorators.py",
+    "python xplainit-python/test_depth_accounting.py",
+    "python xplainit-python/bench_overhead.py",
+    "cargo test && cargo clippy --all-targets --all-features -- -D warnings"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

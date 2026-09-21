@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Task 2.2 - JavaScript/Node.js runtime hook. The Neon Rust addon (xplainit-node/src/lib.rs) ALREADY exports enable/disable/getEvents/onFunctionEnter/onFunctionExit/onException and compiles via cargo. The gap is a JS-side automatic tracer that captures real running functions (args, returns, exceptions, async/await) and wires them to those exported callbacks, plus a runnable end-to-end test. ENVIRONMENT CONSTRAINT: Node.js and npm are NOT installed in this sandbox (only bun 1.2.14). The Neon npm build pipeline (cargo-cp-artifact / npm run build) cannot run here, and a Neon N-API addon may not load under bun. So this feature is implement-and-partially-verify: build everything that CAN build, run everything that CAN run under bun, and clearly document what needs a real Node install to verify. Depends on FEAT-001. Files: xplainit-node/javascript/tracer.js, async_tracer.js, index.js, xplainit-node/test_automatic_tracing.js, xplainit-node/src/lib.rs, xplainit-node/README.md.",
+  "status": "pending",
+  "steps": [
+    "Confirm the Rust addon still builds: `cargo build --release` produces target/release/libxplainit_node.so, and `cargo test -p xplainit-node` passes.",
+    "Implement/complete an automatic JS tracer in xplainit-node/javascript/ that uses the node:inspector Session (V8 Inspector protocol) approach from the plan (Debugger.enable + Debugger.paused) OR a lighter Proxy/wrapper-based instrumentation if inspector-based stepping proves impractical. It must: capture function entry with argument values, function exit with return value, and exceptions, then forward each to the addon's onFunctionEnter/onFunctionExit/onException. Handle async/await and promises (at least document behavior). Keep the public JS API (index.js) coherent with the existing tracer.js/async_tracer.js.",
+    "Write/repair xplainit-node/test_automatic_tracing.js to run the plan's test cases (simple function, recursion, exception, class method) against the tracer and assert real events are captured (getEvents returns non-empty with expected function names/values). Make it self-asserting with a clear PASS/FAIL summary.",
+    "Attempt to run the JS test end to end. First try under bun: `bun xplainit-node/test_automatic_tracing.js` (bun exposes node:inspector Session). If the prebuilt xplainit-node/index.node loads under bun and events are captured, record that as a real end-to-end pass. If bun cannot load the Neon addon or the inspector wiring, do NOT fake success: capture the exact error.",
+    "Because node/npm are unavailable, add a lightweight pure-JS verification path that does NOT depend on the native addon so the tracer's capture logic itself can be exercised in this sandbox: e.g. allow the tracer to accept an injectable backend, and in the test inject a JS mock backend that records the same onFunctionEnter/onFunctionExit/onException calls, asserting the tracer produces the correct sequence of calls with correct args/returns/exception data. This proves the JS capture logic works even though the native round-trip can't be verified here.",
+    "Update xplainit-node/README.md to state the honest status: Rust addon builds; JS tracer implemented; end-to-end native verification requires a real Node.js+npm install (record whether bun could or could not run it here). Do NOT claim full completion if the native round-trip was not verified."
+  ],
+  "acceptance_criteria": [
+    "cargo build --release builds libxplainit_node.so and cargo test -p xplainit-node passes.",
+    "A JS automatic tracer exists that captures entry args, return values, and exceptions and forwards them to onFunctionEnter/onFunctionExit/onException, with async/await behavior handled or explicitly documented.",
+    "test_automatic_tracing.js exercises simple/recursion/exception/class-method cases and asserts the correct sequence of tracer callbacks via an injectable mock backend (runnable without node/npm), producing a PASS/FAIL summary.",
+    "findings honestly records: native addon build result, whether the end-to-end native path ran under bun (with exact error if not), and exactly what remains to verify on a real Node install. No overstated completion.",
+    "The rest of the workspace stays green: cargo test, cargo clippy -D warnings, and the Python suites still pass."
+  ],
+  "verification": [
+    "cargo build --release",
+    "cargo test -p xplainit-node",
+    "bun xplainit-node/test_automatic_tracing.js  (best-effort native path; record result)",
+    "bun xplainit-node/test_automatic_tracing.js --mock  (or equivalent) to exercise pure-JS capture logic without the native addon",
+    "cargo clippy --all-targets --all-features -- -D warnings"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
