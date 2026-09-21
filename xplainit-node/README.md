@@ -2,6 +2,32 @@
 
 Natural language explanations for JavaScript/Node.js code execution.
 
+## Status (Phase 2.2 - honest)
+
+- **Rust/Neon addon builds:** `cargo build --release` produces
+  `target/release/libxplainit_node.so`, and `cargo test -p xplainit-node`
+  passes. The addon exports `enable`, `disable`, `isEnabled`, `getEvents`,
+  `clearEvents`, `getStatistics`, and the tracer callbacks `onFunctionEnter`,
+  `onFunctionExit`, `onException`.
+- **Automatic JS tracer implemented and unit-verified:**
+  `javascript/tracer.js` (`XplainitNodeTracer`) wraps functions, class methods,
+  and objects to capture real argument values, real return values, and real
+  exceptions (including `async`/`await` settlement), forwarding each to a
+  backend implementing the callback contract above. It accepts an **injectable
+  backend**, so its capture logic is exercised with a pure-JS mock in
+  `test_automatic_tracing.js` (44 assertions across simple / recursion /
+  exception / class-method / async cases). Run it with:
+  `bun xplainit-node/test_automatic_tracing.js` (PASS/FAIL summary, non-zero
+  exit on failure).
+- **End-to-end native round-trip NOT verified in this sandbox.** Node.js and
+  npm are not installed here (only `bun` 1.2.14). The Neon npm build pipeline
+  (`cargo-cp-artifact` / `npm run build`) cannot run, and the N-API `.node`
+  addon cannot be loaded under `bun` (`invalid ELF header` for the prebuilt
+  `index.node`; the raw `.so` also fails to load). `node:inspector`'s `Session`
+  *is* available under bun, but the wrapper tracer does not require it. To
+  verify the JS -> Rust round-trip you need a real **Node.js + `npm run build`**
+  install, then run `node test_automatic_tracing.js --native`.
+
 ## Installation
 
 ```bash
@@ -63,6 +89,40 @@ console.log('Captured events:', JSON.parse(events));
 
 tracer.disable();
 ```
+
+### Automatic Tracer (wrapper-based)
+
+`XplainitNodeTracer` instruments the functions/classes you hand it and forwards
+live values to a backend. The backend is injectable: use the native addon in
+production, or a mock in tests.
+
+```javascript
+const { XplainitNodeTracer, loadNativeBackend } = require('xplainit/javascript');
+
+// Native addon in production (falls back to null if it cannot load):
+const backend = loadNativeBackend();
+const tracer = new XplainitNodeTracer(backend).enable();
+
+// Wrap a plain function - captures args, return value, and exceptions:
+const add = tracer.wrap((a, b) => a + b, { name: 'add', file: __filename });
+add(2, 3); // -> onFunctionEnter('add', {arg0:'2', arg1:'3'}, ...), onFunctionExit('add', '5')
+
+// Wrap all methods of a class (instance + static):
+class Calculator {
+  multiply(a, b) { return a * b; }
+  static square(x) { return x * x; }
+}
+tracer.wrapClass(Calculator, { file: __filename });
+
+// async / await: exit is recorded when the returned promise settles;
+// a rejection is recorded via onException instead of onFunctionExit.
+const fetchValue = tracer.wrap(async (x) => x * 2, { name: 'fetchValue' });
+await fetchValue(21);
+```
+
+For testing without the native addon, inject any object implementing
+`onFunctionEnter(name, args, file, line)`, `onFunctionExit(name, returnValue)`,
+and `onException(errorType, message, file, line)`.
 
 ### TypeScript Support
 
@@ -145,10 +205,10 @@ Get captured events as JSON string.
 
 ## Performance
 
-Xplainit is designed for minimal overhead:
-- **<2μs per event** on modern hardware
-- **1-2% overhead** for typical applications
-- **Zero-cost** when disabled
+The automatic tracer uses per-call function wrappers, so overhead scales with
+the number of wrapped calls. When the tracer is disabled, wrapped functions are
+a thin pass-through. Formal per-event benchmarks under a real Node.js runtime
+have not yet been captured for this binding.
 
 ## License
 
