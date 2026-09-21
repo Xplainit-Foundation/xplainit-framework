@@ -8,9 +8,44 @@ exceptions, and line executions automatically.
 
 import sys
 import inspect
+import os
 import threading
 from typing import Optional, Dict, Any, Set
 import time
+
+
+def _stdlib_locations():
+    """
+    Collect filesystem locations that hold the Python standard library and
+    installed third-party packages. Frames whose source file lives under any
+    of these locations are treated as "not user code" and excluded from
+    tracing.
+    """
+    locations = set()
+
+    # sys.prefix / sys.base_prefix cover the interpreter's stdlib install.
+    for prefix in {sys.prefix, sys.base_prefix, sys.exec_prefix,
+                   getattr(sys, 'base_exec_prefix', sys.exec_prefix)}:
+        if prefix:
+            locations.add(os.path.realpath(prefix))
+
+    # sys.path entries that look like stdlib / site-packages directories.
+    for entry in sys.path:
+        if not entry:
+            continue
+        real = os.path.realpath(entry)
+        base = os.path.basename(real)
+        if base in ('site-packages', 'dist-packages') or \
+                (os.sep + 'lib' + os.sep + 'python') in (real + os.sep):
+            locations.add(real)
+
+    # The directory that actually contains a known stdlib module (os).
+    try:
+        locations.add(os.path.realpath(os.path.dirname(os.__file__)))
+    except Exception:
+        pass
+
+    return frozenset(locations)
 
 
 class AutoTracer:
@@ -68,18 +103,36 @@ class AutoTracer:
         self._active = False
         self._previous_trace = None
         
-        # Performance optimization: Cache module trace decisions
-        # Key: module_name, Value: should_trace (True/False)
-        self._module_cache: Dict[str, bool] = {}
         self._cache_enabled = True
-        
-        # Performance optimization: Pre-compile stdlib exclusion list
+
+        # Performance optimization: Cache trace decisions per source filename.
+        # Keyed on the frame's co_filename so user code (including __main__)
+        # is decided once and reused.
+        self._file_cache: Dict[str, bool] = {}
+
+        # Filesystem locations that hold the stdlib / installed packages.
+        # Frames whose source file lives under these paths are user-excluded.
+        self._stdlib_locations = _stdlib_locations()
+
+        # The tracer's own source file. We must never trace ourselves, or we
+        # would recurse infinitely. Matching by filename is robust: it does not
+        # accidentally skip user code that merely contains the word "tracer".
+        try:
+            self._self_filename = os.path.realpath(__file__)
+        except Exception:
+            self._self_filename = None
+
+        # Performance optimization: Pre-compile stdlib exclusion list.
+        # NOTE: '__main__' is intentionally NOT excluded here - user scripts run
+        # under module __name__ == '__main__' and must be traced. Standard
+        # library exclusion is primarily driven by source-file location (see
+        # _stdlib_locations); this name list is a fast-path fallback.
         self._stdlib_prefixes = frozenset([
             'sys', 'os', 'io', 'abc', 'codecs', 'encodings',
             'importlib', 'collections', 'typing', 'functools',
             'threading', 'weakref', 'contextlib', 'traceback',
             'tokenize', 'token', 'linecache', 'dis', 'opcode',
-            'builtins', '__main__', 'site', 'pkgutil', 'zipimport',
+            'pkgutil', 'zipimport',
             'stat', 'ntpath', 'posixpath', 'genericpath', 'nt',
             'posix', 'errno', 'pwd', 'grp', 'termios', 'tty',
             'pty', 'fcntl', 'pipes', 'signal', 'mmap', 'ctypes',
@@ -148,59 +201,105 @@ class AutoTracer:
         depth = self._get_depth()
         if depth > self.max_depth:
             return False
-        
-        # Get module name
+
+        # Get module name and source filename for this frame.
         module_name = frame.f_globals.get('__name__', '')
-        
-        # OPTIMIZATION 0: Check cache first (biggest win)
-        if self._cache_enabled and module_name in self._module_cache:
-            return self._module_cache[module_name]
-        
-        # OPTIMIZATION 1: Exclude xplainit itself (prevent infinite recursion)
-        if 'xplainit' in module_name or 'tracer' in module_name:
-            self._module_cache[module_name] = False
+        filename = frame.f_code.co_filename
+
+        # OPTIMIZATION 1: Exclude the tracer's own source file (prevent infinite
+        # recursion). Matched by filename so user code that merely mentions
+        # "tracer" or "xplainit" in its name is not skipped.
+        if self._self_filename is not None:
+            try:
+                if os.path.realpath(filename) == self._self_filename:
+                    return False
+            except Exception:
+                pass
+
+        # Also exclude the compiled xplainit backend and its python package by
+        # module name (these frames should never be traced).
+        if module_name == 'xplainit' or module_name.startswith('xplainit.'):
             return False
-        
-        # OPTIMIZATION 2: If include_modules is specified, ONLY trace those
+
+        # Frames without a real source file (e.g. '<string>', '<frozen ...>',
+        # built-ins) are interpreter internals - do not trace them.
+        if not filename or filename.startswith('<'):
+            return False
+
+        # OPTIMIZATION 2: If include_modules is specified, ONLY trace those.
         if self.include_modules is not None:
             for pattern in self.include_modules:
                 if pattern.endswith('.*'):
                     # Wildcard pattern (e.g., 'myapp.*')
                     prefix = pattern[:-2]
                     if module_name == prefix or module_name.startswith(prefix + '.'):
-                        self._module_cache[module_name] = True
                         return True
                 else:
                     # Exact match
                     if module_name == pattern or module_name.startswith(pattern + '.'):
-                        self._module_cache[module_name] = True
                         return True
             # Not in include list
-            self._module_cache[module_name] = False
             return False
-        
-        # OPTIMIZATION 3: Exclude specific modules
+
+        # OPTIMIZATION 3: Exclude specific modules requested by the caller.
         if module_name in self.exclude_modules:
-            self._module_cache[module_name] = False
             return False
-        
-        # OPTIMIZATION 4: Exclude standard library (using frozenset for O(1) lookup)
-        # Check top-level module
-        top_level = module_name.split('.')[0] if module_name else ''
-        if top_level in self._stdlib_prefixes:
-            self._module_cache[module_name] = False
-            return False
-        
-        # OPTIMIZATION 5: Sampling (if enabled)
+
+        # OPTIMIZATION 4: Cached per-file decision (biggest win). Whether a
+        # source file is user code vs stdlib/site-packages never changes.
+        if self._cache_enabled and filename in self._file_cache:
+            cached = self._file_cache[filename]
+            if not cached:
+                return False
+            # cached True still needs to fall through to sampling below.
+        else:
+            is_user_code = not self._is_stdlib_file(filename, module_name)
+            if self._cache_enabled:
+                self._file_cache[filename] = is_user_code
+            if not is_user_code:
+                return False
+
+        # OPTIMIZATION 5: Sampling (if enabled). Decisions are random so they
+        # are never cached.
         if self.sampling_rate < 1.0:
             import random
             if random.random() > self.sampling_rate:
-                # Don't cache sampling decisions (they're random)
                 return False
-        
-        # Cache and return True
-        self._module_cache[module_name] = True
+
         return True
+
+    def _is_stdlib_file(self, filename: str, module_name: str) -> bool:
+        """
+        Decide whether a source file belongs to the Python standard library or
+        an installed (site-packages) package, i.e. NOT user code.
+
+        Args:
+            filename: The frame's co_filename.
+            module_name: The frame's module __name__.
+
+        Returns:
+            True if the file is stdlib/site-packages (should be excluded).
+        """
+        # __main__ is always user code (the script being run).
+        if module_name == '__main__':
+            return False
+
+        try:
+            real = os.path.realpath(filename)
+        except Exception:
+            real = filename
+
+        for location in self._stdlib_locations:
+            if real == location or real.startswith(location + os.sep):
+                return True
+
+        # Fast-path fallback: recognise well-known top-level stdlib module names
+        # even if path detection did not catch them.
+        top_level = module_name.split('.')[0] if module_name else ''
+        if top_level and top_level in self._stdlib_prefixes:
+            return True
+
+        return False
     
     def _trace_callback(self, frame, event: str, arg: Any):
         """
