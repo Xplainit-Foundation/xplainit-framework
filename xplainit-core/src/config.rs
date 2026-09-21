@@ -172,6 +172,20 @@ pub struct Config {
     /// Defaults to common secret names (password, token, api_key, ...). Matched
     /// as substrings so keys like `db_password` are covered.
     pub redact_key_patterns: Vec<String>,
+
+    /// Number of *consecutive* framework errors tolerated before the runtime
+    /// circuit-breaker trips and auto-disables tracing (Task 4.2 error
+    /// recovery). A value of 0 disables the breaker entirely.
+    ///
+    /// Defaults to a small number so a persistently misbehaving trace target
+    /// disables the framework quickly instead of degrading the host program.
+    pub max_consecutive_errors: u64,
+
+    /// When true, framework-internal errors are logged to stderr with context
+    /// (see [`crate::control::RuntimeControl`]). When false, framework errors
+    /// are counted for telemetry and then swallowed so they never reach the
+    /// host program. Also enabled at runtime via the `XPLAINIT_DEBUG` env var.
+    pub debug_mode: bool,
 }
 
 /// Build the default set of redaction key patterns.
@@ -206,6 +220,8 @@ impl Default for Config {
             exclude_modules: Vec::new(),
             redact_secrets: true,
             redact_key_patterns: default_redact_key_patterns(),
+            max_consecutive_errors: 5,
+            debug_mode: false,
         }
     }
 }
@@ -282,6 +298,20 @@ impl Config {
                 "stderr" => OutputDestination::Stderr,
                 _ => OutputDestination::File(PathBuf::from(output)),
             };
+        }
+
+        // Framework-internal debug logging (Task 4.2). When set to a truthy
+        // value, framework errors are logged to stderr instead of silently
+        // swallowed.
+        if let Ok(debug) = std::env::var("XPLAINIT_DEBUG") {
+            let lower = debug.to_lowercase();
+            config.debug_mode = lower != "false" && debug != "0" && !debug.is_empty();
+        }
+
+        if let Ok(max_errors) = std::env::var("XPLAINIT_MAX_CONSECUTIVE_ERRORS") {
+            if let Ok(parsed) = max_errors.parse::<u64>() {
+                config.max_consecutive_errors = parsed;
+            }
         }
 
         config
