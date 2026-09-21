@@ -39,14 +39,18 @@ This plan transforms Xplainit from a **working framework** into a **production-r
 **Status:** 🔴 BLOCKING ISSUES  
 **Release:** v0.1.1 Patch Release
 
-## Task 1.1: Fix Python Bindings (PyO3 0.22 Migration)
+## Task 1.1: Fix Python Bindings (PyO3 0.22 Migration) — ✅ DONE
 
 **Priority:** 🔴 CRITICAL  
 **Effort:** 3-5 days  
-**Owner:** Core Team
+**Owner:** Core Team  
+**Status:** ✅ Completed — the `xplainit-python` crate now compiles cleanly (0 errors, 0 warnings) and `cargo clippy -p xplainit-python --all-targets -- -D warnings` is clean.
 
-### Current Problem
-- 35 compilation errors in xplainit-python
+### Status Note (corrected)
+The earlier "35 compilation errors" figure was **stale**: by the time Phase 1 work began the crate already compiled, with only a few warnings remaining (deprecated `Option` signature, an unused variable). Those warnings have since been cleaned up. No PyO3 migration work is outstanding.
+
+### Original Problem (historical)
+- ~~35 compilation errors in xplainit-python~~ (stale — crate compiles)
 - PyO3 0.22 API changes broke existing code
 - Main issues:
   - `py.acquire_gil()` → `Python::with_gil(|py| { })`
@@ -90,48 +94,48 @@ This plan transforms Xplainit from a **working framework** into a **production-r
 
 ---
 
-## Task 1.2: Restore Missing Examples
+## Task 1.2: Restore Missing Examples — ✅ DONE
 
 **Priority:** 🟡 HIGH  
-**Effort:** 1-2 days
+**Effort:** 1-2 days  
+**Status:** ✅ Completed — all examples compile and run.
 
-### Current Problem
-- custom_filters.rs - API mismatch
-- event_pipeline.rs - API mismatch
-- Examples removed due to outdated code
+### Status Note (corrected)
+The claim that `custom_filters.rs` and `event_pipeline.rs` had been removed / had API mismatches was **stale**: both already existed, compiled, and ran successfully. The genuine remaining gap was a real-world example, which has now been added as `real_world_debugging.rs`.
+
+### Original Problem (historical)
+- ~~custom_filters.rs - API mismatch~~ (stale — exists and runs)
+- ~~event_pipeline.rs - API mismatch~~ (stale — exists and runs)
+- ~~Examples removed due to outdated code~~ (stale)
 
 ### Action Items
-1. **Restore custom_filters.rs**
-   - Update to current API
-   - Test all 4 filter examples
-   - Add documentation
-
-2. **Restore event_pipeline.rs**
-   - Update pipeline construction
-   - Fix sink initialization
-   - Add comprehensive comments
-
-3. **Add new examples**
-   - real_world_debugging.rs
-   - performance_profiling.rs
-   - async_tracing.rs
+1. **custom_filters.rs** — ✅ present, compiles, all 4 filter examples run.
+2. **event_pipeline.rs** — ✅ present, compiles, full Filter → Processor → Sink demo runs.
+3. **New real-world example** — ✅ `xplainit-core/examples/real_world_debugging.rs` added: it records
+   function-enter / variable / function-exit / division-by-zero events into an `EventStore`, replays
+   them as natural-language explanations, and runs `ErrorExplainer` for root-cause analysis and fix
+   suggestions. (`performance_profiling.rs` / `async_tracing.rs` remain future/optional additions.)
 
 ### Success Criteria
-- ✅ All examples compile
-- ✅ All examples run successfully
+- ✅ All examples compile (`cargo build --release --examples -p xplainit-core`)
+- ✅ All examples run successfully (basic_usage, custom_filters, event_pipeline, error_analysis, ast_parsing, demo_simple, real_world_debugging)
 - ✅ Output is clear and educational
 
 ---
 
-## Task 1.3: Fix AST Integration (Tree-sitter)
+## Task 1.3: Fix AST Integration (Tree-sitter) — ✅ DONE
 
 **Priority:** 🟡 HIGH  
-**Effort:** 2-3 days
+**Effort:** 2-3 days  
+**Status:** ✅ Completed — `get_containing_function` now works.
 
-### Current Problem
-- Tree-sitter is a dependency but not fully integrated
-- ast.rs has stub implementation
-- No actual parsing happening
+### Status Note (corrected)
+`ast.rs` was **not** a stub: tree-sitter parsing, `find_node_at_location`, and context extraction already worked. The genuine bug was that `get_containing_function` always returned `None` because it never walked up the parent chain. It now performs an upward walk from the node at the target location to the enclosing function/method definition and returns its name. The `ast_parsing` example confirms "Enclosing function resolution: ✅ Working".
+
+### Original Problem (historical)
+- ~~Tree-sitter is a dependency but not fully integrated~~ (stale — integrated)
+- ~~ast.rs has stub implementation~~ (stale — parsing works)
+- Genuine bug (now fixed): `get_containing_function` returned `None` (no upward parent walk)
 
 ### Action Items
 1. **Implement real AST parsing** (xplainit-core/src/ast.rs)
@@ -169,16 +173,20 @@ tree-sitter-cpp = "0.20"
 
 ---
 
-## Task 1.4: Update Documentation
+## Task 1.4: Update Documentation — ✅ DONE
 
 **Priority:** 🟢 MEDIUM  
-**Effort:** 1 day
+**Effort:** 1 day  
+**Status:** ✅ Completed — docs now reflect the true, working state of Python automatic tracing.
+
+### Status Note
+Several status docs previously described Python automatic (`sys.settrace`) tracing as fully complete when it was in fact broken (it captured **0 events** for `__main__` code because the frame filter excluded user frames). Phase 1 fixed the filter; `python test_automatic_tracing.py` now passes 3/3 with events captured. The docs below have been corrected to say auto-tracing works **and** to note it was recently fixed.
 
 ### Action Items
-1. Update README.md with correct status
-2. Update CHANGELOG.md
-3. Create KNOWN_ISSUES.md
-4. Update installation guides
+1. ✅ Update README.md with correct status
+2. ✅ Update CHANGELOG.md (added `fix:` entries for the auto-tracing and AST fixes)
+3. ✅ Correct PROGRESS.md, CURRENT_STATUS_AND_NEXT_STEPS.md, IMPLEMENTATION_COMPLETE.md
+4. ✅ Add corrective notes to historical `*_COMPLETE.md` files (not deleted)
 
 ---
 
@@ -1326,7 +1334,7 @@ mvn deploy
 
 ### Must Have (P0)
 - [x] All language bindings compile without errors
-- [ ] Python automatic tracing works
+- [x] Python automatic tracing works
 - [ ] Node.js automatic tracing works
 - [ ] Zero critical bugs
 - [ ] 90%+ test coverage

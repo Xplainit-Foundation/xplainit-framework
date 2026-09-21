@@ -58,8 +58,8 @@ We successfully implemented the core value proposition of Xplainit - generating 
 6. ✅ Task 6: Error & Exception Explanation System
 7. ✅ Task 7: Enable/Disable Control System
 
-**In Progress (Task 8):**
-8. 🔄 Task 8: Python Runtime Integration (FOUNDATION COMPLETE, HOOKS MISSING)
+**Task 8:**
+8. ✅ Task 8: Python Runtime Integration — automatic `sys.settrace` hook works (fixed in Phase 1; it previously captured 0 events for `__main__`/user code). `test_automatic_tracing.py` passes 3/3 with events captured.
 
 **Remaining Tasks (11/19):**
 9-13. ⭕ Language Integrations (JavaScript, C/C++, Java, Go, Rust)
@@ -70,10 +70,11 @@ We successfully implemented the core value proposition of Xplainit - generating 
 **Current Phase:** Completed Phase 1 (Critical Fixes)  
 **Next Phase:** Phase 2 (Runtime Hooks)  
 
-**What's Missing:**
-- ❌ Actual runtime hooks (sys.settrace for Python, V8 Inspector for Node.js, etc.)
-- ❌ Automatic event capture from running code
-- ❌ Real AST integration (Tree-sitter parsing)
+**What's Done / Missing:**
+- ✅ Python automatic runtime hook (`sys.settrace`) — **works** (recently fixed; it previously captured 0 events for `__main__`/user code because the frame filter excluded user frames). `test_automatic_tracing.py` passes 3/3 with events captured.
+- ❌ Other runtime hooks (V8 Inspector for Node.js, JVM TI for Java, etc.)
+- ✅ Automatic event capture from running Python code (via the fixed `sys.settrace` hook)
+- ✅ Real AST integration (Tree-sitter parsing) — including `get_containing_function` (fixed in Phase 1)
 - ❌ CLI tool
 - ❌ VS Code extension
 - ❌ Production hardening
@@ -92,12 +93,12 @@ We successfully implemented the core value proposition of Xplainit - generating 
 - ✅ Phase 4: Python Integration (Weeks 13-14) - FOUNDATION ONLY
 
 **Current Position:** 
-- Phase 4 (Python Integration): 70% complete
+- Phase 4 (Python Integration): complete for automatic tracing
   - ✅ PyO3 bindings structure
   - ✅ Python classes and decorators
   - ✅ Explanation generation
-  - ❌ **MISSING: Actual sys.settrace() hook**
-  - ❌ **MISSING: Automatic event capture**
+  - ✅ **Actual `sys.settrace()` hook — works** (fixed in Phase 1; previously captured 0 events for `__main__`/user code)
+  - ✅ **Automatic event capture** — `test_automatic_tracing.py` passes 3/3 with events captured
 
 **Next Phases:**
 - Phase 5: JavaScript/Node.js Integration (Weeks 15-16)

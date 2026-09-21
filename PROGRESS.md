@@ -237,11 +237,11 @@ pub fn is_enabled(&self) -> bool {
 - ✅ Python examples: `basic_usage.py`, `decorator_usage.py`
 - ✅ Package metadata: `pyproject.toml`
 
-**Remaining Work:**
-- Fix PyO3 0.22 API compatibility (35 compilation errors)
-- Implement actual sys.settrace() hook
-- Test end-to-end Python integration
-- Build with maturin for PyPI
+**Status (updated after Phase 1):**
+- ✅ PyO3 0.22 API compatibility — crate compiles clean (the earlier "35 compilation errors" figure was stale)
+- ✅ Automatic `sys.settrace()` hook — **works** (recently fixed; it previously captured 0 events for `__main__`/user code because the frame filter excluded user frames). `test_automatic_tracing.py` passes 3/3 with events captured.
+- ✅ End-to-end Python integration tested via `test_automatic_tracing.py` and `xplainit-python/test_decorators.py`
+- ⭕ Build with maturin for PyPI (distribution — future phase)
 
 **Python API Design:**
 ```python
@@ -374,11 +374,11 @@ Xplainit Framework/
 
 ## 🚀 Next Immediate Steps
 
-1. **Complete Python Integration (Task 8)**
-   - Fix PyO3 0.22 API compatibility issues
-   - Implement actual sys.settrace() integration
-   - Test with real Python code
-   - Build with maturin
+1. **Python Integration (Task 8) — done for automatic tracing**
+   - ✅ PyO3 0.22 API compatibility (crate compiles clean; "35 errors" was stale)
+   - ✅ Actual `sys.settrace()` integration (fixed in Phase 1; previously captured 0 events for `__main__`/user code)
+   - ✅ Tested with real Python code (`test_automatic_tracing.py` 3/3, decorator tests pass)
+   - ⭕ Build with maturin for PyPI distribution (future phase)
 
 2. **Documentation (Task 18 - Partial)**
    - API documentation (rustdoc)

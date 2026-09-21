@@ -4,6 +4,8 @@
 
 Successfully implemented comprehensive natural language explanation generation for the Xplainit Python bindings. The system now provides human-readable explanations of Python code execution, supporting multiple verbosity levels, error tracking, performance profiling, and real-time output.
 
+> **Correction (Phase 1):** When this document was first written, automatic runtime tracing via `sys.settrace` was **not** yet capturing events for `__main__`/user code (it recorded 0 events because the frame filter excluded user frames). That bug has since been fixed. Automatic tracing now works: `python test_automatic_tracing.py` passes 3/3 with events captured. The "Function Call Tracking" and "Exception Handling" items below therefore apply to both decorator-based and automatic (`sys.settrace`) tracing.
+
 ## What Was Implemented
 
 ### Core Features

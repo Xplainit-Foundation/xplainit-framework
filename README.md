@@ -299,10 +299,11 @@ go get github.com/xplainit/xplainit-go
 - [x] **C/C++ FFI bindings (cbindgen)** ✨
 - [x] **Java JNI bindings (jni 0.21)** ✨
 - [x] **Go CGO bindings** ✨
+- [x] **Python automatic runtime tracing (`sys.settrace`)** ✨ — works; recently fixed (it previously captured 0 events for `__main__`/user code because the frame filter excluded user frames). `test_automatic_tracing.py` now passes 3/3 with events captured.
 - [x] Error handling system
 - [x] Output formatting (JSON, Console, Colored)
 - [x] Comprehensive testing (93 tests passing)
-- [x] 4 Rust examples (basic_usage, error_analysis, custom_filters, event_pipeline)
+- [x] 7 Rust examples (basic_usage, error_analysis, custom_filters, event_pipeline, ast_parsing, demo_simple, real_world_debugging)
 
 ### 🚧 In Progress
 
@@ -316,7 +317,7 @@ go get github.com/xplainit/xplainit-go
 
 - **93 tests passing** across all packages
 - **3 language bindings** complete (Python, Node.js, C/C++)
-- **4 working examples** in Rust
+- **7 working examples** in Rust
 - **<2μs per event** performance overhead
 - **1-2% runtime overhead** for typical workloads
 

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 1 Fixes (2026-01) — Runtime hook + AST correctness
+
+#### Fixed
+- **Python automatic tracing (`sys.settrace`) now actually works** 🔥
+  - Previously the auto-tracer captured **0 events** for user code: the frame
+    filter in `xplainit-python/python/tracer.py` treated `__main__` as stdlib and
+    matched any module containing `"tracer"`, so every user frame was excluded.
+  - The filter now traces user / `__main__` code while still excluding xplainit's
+    own internals and genuine stdlib, and the `call`-event callback returns a
+    local trace function so `return`/`exception` events fire.
+  - `python test_automatic_tracing.py` now passes **3/3 with events captured**
+    (was 1/3 with 0 events). Note: earlier docs that described automatic tracing
+    as "complete" were premature — it is complete now.
+- **AST `get_containing_function` now resolves the enclosing function** 🔥
+  - `xplainit-core/src/ast.rs` previously always returned `None`. It now walks up
+    the tree-sitter parent chain from the node at a location to the enclosing
+    function/method definition and returns its name.
+
+#### Added
+- **New real-world example** `xplainit-core/examples/real_world_debugging.rs`
+  - Records function-enter / variable / function-exit / division-by-zero events
+    into an `EventStore`, replays them as natural-language explanations, and runs
+    `ErrorExplainer` for root-cause analysis, fix suggestions, and prevention tips.
+
 ### Phase 1 Complete (2026-01-13)
 
 #### Fixed

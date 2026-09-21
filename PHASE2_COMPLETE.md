@@ -13,6 +13,14 @@
 
 Successfully implemented **the core value proposition** of Xplainit - automatic runtime code tracing without manual instrumentation across three major programming languages: **Python, JavaScript/Node.js, and C/C++**.
 
+> **Correction (Phase 1 follow-up):** This document declared Python automatic
+> (`sys.settrace`) tracing complete prematurely. In practice the Python auto-tracer
+> was capturing **0 events** for `__main__`/user code (its frame filter excluded
+> user frames) until the Phase 1 fix. Automatic Python tracing now genuinely works:
+> `python test_automatic_tracing.py` passes 3/3 with events captured. (The
+> JavaScript/Node.js and C/C++ hooks described here are separate and were not part
+> of that fix.)
+
 This represents approximately **70% of all programming use cases** and transforms Xplainit from a "manual event tracking library" into an **"automatic polyglot runtime tracer"** - a revolutionary capability in the debugging and observability space.
 
 ---

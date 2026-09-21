@@ -6,6 +6,13 @@ January 14, 2026
 ## Summary
 Successfully enhanced Python and Node.js automatic tracing implementations with production-ready features including decorators, line-level tracing, async/await support, and comprehensive production examples.
 
+> **Correction (Phase 1 follow-up):** This document overstated the state of Python
+> automatic (`sys.settrace`) tracing at the time of writing — the auto-tracer was
+> in fact capturing **0 events** for `__main__`/user code because its frame filter
+> excluded user frames. That bug has since been fixed; automatic tracing now works
+> and `python test_automatic_tracing.py` passes 3/3 with events captured. The
+> decorator-based features described here were unaffected.
+
 ---
 
 ## 🎯 Objectives Achieved
