@@ -4,7 +4,7 @@ Python bindings for the Xplainit Framework - Understand what your code is doing 
 
 ## Features
 
-- 🔍 **Automatic Runtime Tracing** (`sys.settrace`) - See every function call, variable assignment, and control flow decision. Working as of the Phase 1 fix (it previously captured 0 events for `__main__`/user code); `test_automatic_tracing.py` now passes 3/3 with events captured.
+- 🔍 **Automatic Runtime Tracing** (`sys.settrace`) - Captures function calls, returns, and exceptions automatically (line-level tracing is not emitted). Working as of the Phase 1 fix (it previously captured 0 events for `__main__`/user code); `test_automatic_tracing.py` now passes 3/3 with events captured.
 - 💬 **Plain English Explanations** - Convert runtime events into human-readable descriptions
 - 🐛 **Error Explanation** - Get detailed explanations of what went wrong and how to fix it
 - ⚡ **Zero Overhead When Disabled** - No performance impact when tracing is off

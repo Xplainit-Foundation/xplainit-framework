@@ -115,8 +115,35 @@ def test_automatic_tracing():
     print(f"\n--- Statistics ---")
     print(f"  {stats}")
     
-    # Success criteria
+    # Success criteria: not just "some events", but that the specific user
+    # functions were captured with balanced enter/exit and an exception event.
+    def _event_kind(e):
+        return list(e.keys())[0] if isinstance(e, dict) else None
+
+    enters = [e for e in events if _event_kind(e) == 'FunctionEnter']
+    exits = [e for e in events if _event_kind(e) == 'FunctionExit']
+    exceptions = [e for e in events if _event_kind(e) == 'Exception']
+
+    entered_names = {e['FunctionEnter'].get('name') for e in enters}
+
+    # The user functions defined above must have been auto-traced.
+    assert 'add_numbers' in entered_names, \
+        f"expected add_numbers to be traced, got {entered_names}"
+    assert 'multiply_numbers' in entered_names, \
+        f"expected multiply_numbers to be traced, got {entered_names}"
+
+    # add_numbers and multiply_numbers return normally, so we must see both
+    # enters and exits (enter/exit is balanced for these non-recursive calls).
+    assert len(enters) >= 2, f"expected >= 2 enter events, got {len(enters)}"
+    assert len(exits) >= 2, f"expected >= 2 exit events, got {len(exits)}"
+
+    # The ZeroDivisionError must surface as an Exception event.
+    assert len(exceptions) >= 1, \
+        f"expected >= 1 exception event, got {len(exceptions)}"
+
     if len(events) > 0:
+        print(f"  Enters: {len(enters)}, Exits: {len(exits)}, "
+              f"Exceptions: {len(exceptions)}")
         print("\n" + "=" * 70)
         print("✓ SUCCESS: Automatic tracing is working!")
         print("=" * 70)
