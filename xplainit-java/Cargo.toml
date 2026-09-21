@@ -14,6 +14,8 @@ crate-type = ["cdylib"]
 xplainit-core = { path = "../xplainit-core" }
 jni = "0.21"
 serde_json.workspace = true
+chrono = "0.4"
+uuid = { version = "1.0", features = ["v4"] }
 
 [package.metadata.jni]
 package = "io.xplainit"

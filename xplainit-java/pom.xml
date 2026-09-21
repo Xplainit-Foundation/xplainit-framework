@@ -32,12 +32,8 @@
     </properties>
 
     <dependencies>
-        <!-- Gson for JSON parsing -->
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>2.10.1</version>
-        </dependency>
+        <!-- No runtime dependencies: statistics JSON is parsed by hand so the
+             library builds and runs fully offline (no Gson / Maven Central). -->
 
         <!-- JUnit for testing -->
         <dependency>

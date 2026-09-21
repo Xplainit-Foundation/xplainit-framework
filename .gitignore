@@ -78,3 +78,8 @@ Thumbs.db
 !xplainit-c/lib/**
 # Built example binary produced by xplainit-c/examples/build.sh
 xplainit-c/examples/example_traced
+
+# Java build artifacts produced by xplainit-java/build_agent.sh
+xplainit-java/classes/
+xplainit-java/libxplainit_agent.so
+*.class
