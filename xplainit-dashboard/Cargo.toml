@@ -1,0 +1,19 @@
+[package]
+name = "xplainit-dashboard"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Web dashboard server for real-time Xplainit trace visualization"
+
+[[bin]]
+name = "xplainit-dashboard"
+path = "src/main.rs"
+
+[dependencies]
+xplainit-core = { path = "../xplainit-core" }
+tokio = { workspace = true, features = ["full"] }
+serde_json.workspace = true
+anyhow.workspace = true
+clap = { version = "4.5", features = ["derive", "cargo"] }

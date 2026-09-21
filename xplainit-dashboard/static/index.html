@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Xplainit Dashboard</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Xplainit Dashboard</h1>
+      <div class="status">
+        <span id="conn-dot" class="dot dot-idle"></span>
+        <span id="conn-label">connecting...</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel summary-panel">
+        <h2>Error Summary</h2>
+        <div class="summary-stats">
+          <div class="stat">
+            <span class="stat-value" id="total-events">0</span>
+            <span class="stat-label">events</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value stat-error" id="error-count">0</span>
+            <span class="stat-label">errors</span>
+          </div>
+        </div>
+        <table class="error-table">
+          <thead>
+            <tr><th>Error type</th><th>Count</th></tr>
+          </thead>
+          <tbody id="error-counts"></tbody>
+        </table>
+        <div id="analyses"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Timeline</h2>
+        <p class="hint">Events stream in order. Errors are highlighted.</p>
+        <ol id="timeline" class="timeline"></ol>
+      </section>
+
+      <section class="panel">
+        <h2>Call Graph</h2>
+        <p class="hint">Derived from FunctionEnter / FunctionExit nesting.</p>
+        <div id="call-graph" class="call-graph"></div>
+      </section>
+
+      <section class="panel tasks-panel" id="tasks-panel" hidden>
+        <h2>Async Tasks</h2>
+        <p class="hint">
+          Lifecycle events grouped per task by AsyncTaskTracker.
+        </p>
+        <div id="tasks" class="tasks"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

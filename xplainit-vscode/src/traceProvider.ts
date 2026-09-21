@@ -2,13 +2,13 @@
 
 import * as vscode from "vscode";
 import * as cp from "child_process";
-import * as fs from "fs";
 import * as path from "path";
 import {
   TraceEvent,
   EventVariant,
   parseTrace,
   eventType,
+  eventLocation,
   isErrorVariant,
   formatValue,
 } from "./trace";
@@ -110,7 +110,7 @@ export class TraceProvider implements vscode.TreeDataProvider<TimelineNode> {
     let currentFunction: string | undefined;
 
     for (const event of this.events) {
-      const loc = event.payload.location;
+      const loc = eventLocation(event);
       if (loc && loc.file && loc.line > 0) {
         const key = locationKey(loc.file, loc.line);
         const bucket = this.byLocation.get(key);
@@ -203,7 +203,7 @@ export class TraceProvider implements vscode.TreeDataProvider<TimelineNode> {
     }
     this.onDidChangeTreeDataEmitter.fire();
 
-    const loc = event.payload.location;
+    const loc = eventLocation(event);
     if (!loc || !loc.file || loc.line <= 0) {
       vscode.window.setStatusBarMessage(
         `Xplainit: ${describeEvent(event)} (no source location)`,
@@ -266,30 +266,36 @@ export class TraceProvider implements vscode.TreeDataProvider<TimelineNode> {
   // ===== Record via the xplainit CLI =====
 
   /// Record a trace by shelling out to the xplainit CLI (see FEAT-001).
-  /// The CLI writes trace JSON to `outputPath`; we then load it.
+  ///
+  /// The CLI only emits a renderable trace when it is given an already-captured
+  /// `.json` trace; for a *source* file `xplainit run` deliberately prints human
+  /// guidance ("Live tracing is not wired...") rather than JSON, because live
+  /// tracing needs the per-language bindings. So we capture stdout in memory
+  /// first and only write/parse it when it actually looks like a JSON trace
+  /// array. Otherwise we surface the CLI's guidance to the user instead of
+  /// writing an unparseable `.json` file that would later throw in `parseTrace`.
   async recordTrace(targetFile: string, outputPath: string): Promise<void> {
     const config = vscode.workspace.getConfiguration("xplainit");
     const cliPath = config.get<string>("cliPath", "xplainit");
     const subcommand = config.get<string>("recordCommand", "run");
 
     this.output.appendLine(
-      `[record] ${cliPath} ${subcommand} ${targetFile} > ${outputPath}`
+      `[record] ${cliPath} ${subcommand} ${targetFile}`
     );
 
-    await new Promise<void>((resolve, reject) => {
+    const stdout = await new Promise<string>((resolve, reject) => {
       const child = cp.spawn(cliPath, [subcommand, targetFile], {
         cwd: this.workspaceCwd(),
       });
-      const outStream = fs.createWriteStream(outputPath);
-      child.stdout.pipe(outStream);
+      let out = "";
+      child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
       child.stderr.on("data", (chunk: Buffer) =>
         this.output.append(chunk.toString())
       );
       child.on("error", reject);
       child.on("close", (code) => {
-        outStream.end();
         if (code === 0) {
-          resolve();
+          resolve(out);
         } else {
           reject(
             new Error(`xplainit ${subcommand} exited with code ${code ?? -1}.`)
@@ -298,6 +304,24 @@ export class TraceProvider implements vscode.TreeDataProvider<TimelineNode> {
       });
     });
 
+    if (!looksLikeTraceJson(stdout)) {
+      // The CLI produced guidance text (the common case for a source file with
+      // the default `run` command), not a JSON trace. Do not write it to a
+      // `.json` file; show it to the user so they know what to do next.
+      this.output.appendLine(stdout);
+      vscode.window.showWarningMessage(
+        `Xplainit: "${cliPath} ${subcommand}" did not produce a JSON trace. ` +
+          "Live tracing needs the per-language binding; run the program under " +
+          "that binding, export a JSON trace, then open it with " +
+          '"Xplainit: Load Trace". See the Xplainit output channel for details.'
+      );
+      return;
+    }
+
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.file(outputPath),
+      Buffer.from(stdout, "utf8")
+    );
     await this.loadFromFile(outputPath);
     vscode.window.showInformationMessage(
       `Xplainit: recorded trace to ${outputPath}.`
@@ -375,6 +399,21 @@ export class TraceProvider implements vscode.TreeDataProvider<TimelineNode> {
   }
 }
 
+/// Whether CLI stdout looks like a JSON trace (a JSON array), as opposed to the
+/// human-readable guidance text `xplainit run <source>` prints. Guards the
+/// record flow from writing unparseable output to a `.json` file.
+function looksLikeTraceJson(stdout: string): boolean {
+  const trimmed = stdout.trim();
+  if (!trimmed.startsWith("[")) {
+    return false;
+  }
+  try {
+    return Array.isArray(JSON.parse(trimmed));
+  } catch {
+    return false;
+  }
+}
+
 function splitLocationKey(key: string): [string, number] {
   const idx = key.lastIndexOf(":");
   const file = key.slice(0, idx);
@@ -392,7 +431,7 @@ export class TimelineNode {
       vscode.TreeItemCollapsibleState.None
     );
     item.description = eventType(this.event.variant);
-    const loc = this.event.payload.location;
+    const loc = eventLocation(this.event);
     if (loc && loc.file) {
       item.tooltip = `${loc.file}:${loc.line}`;
     }
@@ -458,6 +497,12 @@ export function describeEvent(event: TraceEvent): string {
       return `deadlock: ${(p.threads ?? []).join(", ")}`;
     case "MemoryLeakDetected":
       return `memory leak (${p.leaked_bytes ?? 0} bytes)`;
+    case "AsyncTaskStart":
+      return `async task start ${p.task_name ?? p.task_id ?? "?"}`;
+    case "AsyncTaskAwait":
+      return `async task await ${p.awaiting_on ?? "?"}`;
+    case "AsyncTaskResume":
+      return `async task resume -> ${formatValue(p.resumed_with)}`;
     default:
       return event.variant;
   }

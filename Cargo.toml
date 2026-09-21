@@ -6,6 +6,7 @@ members = [
     "xplainit-c",
     "xplainit-java",
     "xplainit-cli",
+    "xplainit-dashboard",
 ]
 
 resolver = "2"

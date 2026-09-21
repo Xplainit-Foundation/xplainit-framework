@@ -45,7 +45,10 @@ export type EventVariant =
   | "Panic"
   | "InfiniteLoopDetected"
   | "DeadlockDetected"
-  | "MemoryLeakDetected";
+  | "MemoryLeakDetected"
+  | "AsyncTaskStart"
+  | "AsyncTaskAwait"
+  | "AsyncTaskResume";
 
 /// The inner payload of any event. Fields are optional because they differ per
 /// variant; only the fields relevant to a given variant will be present. This
@@ -94,6 +97,14 @@ export interface EventPayload {
   threads?: string[];
   allocation_count?: number;
   leaked_bytes?: number;
+  // Async task fields (AsyncTaskStart / AsyncTaskAwait / AsyncTaskResume).
+  // `task_id` is distinct from the event `id`; `spawned_from` is the source
+  // location for AsyncTaskStart (that variant has no `location` field).
+  task_id?: string;
+  task_name?: string;
+  awaiting_on?: string;
+  spawned_from?: SourceLocation;
+  resumed_with?: unknown;
 }
 
 /// A single execution event: exactly one key whose name is the variant.
@@ -146,6 +157,9 @@ const EVENT_TYPE_BY_VARIANT: Record<EventVariant, string> = {
   InfiniteLoopDetected: "infinite_loop",
   DeadlockDetected: "deadlock",
   MemoryLeakDetected: "memory_leak",
+  AsyncTaskStart: "async_task_start",
+  AsyncTaskAwait: "async_task_await",
+  AsyncTaskResume: "async_task_resume",
 };
 
 export function isErrorVariant(variant: EventVariant): boolean {
@@ -154,6 +168,13 @@ export function isErrorVariant(variant: EventVariant): boolean {
 
 export function eventType(variant: EventVariant): string {
   return EVENT_TYPE_BY_VARIANT[variant] ?? variant;
+}
+
+/// Resolve the source location for an event. Most variants carry `location`,
+/// but `AsyncTaskStart` records its spawn site in `spawned_from` instead. This
+/// helper normalizes both so callers do not have to special-case async events.
+export function eventLocation(event: TraceEvent): SourceLocation | undefined {
+  return event.payload.location ?? event.payload.spawned_from;
 }
 
 /// Parse a raw JSON array of externally-tagged events into normalized events.

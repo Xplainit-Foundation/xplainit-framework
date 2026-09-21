@@ -19,8 +19,26 @@ pub enum TaskState {
     Running,
     /// The task is suspended at an await point.
     Awaiting,
-    /// The task has completed. Reserved for a future explicit completion event;
-    /// currently only reachable via [`AsyncTaskTracker::mark_completed`].
+    /// The task has completed.
+    ///
+    /// # Known limitation: not reachable from events alone
+    ///
+    /// The [`ExecutionEvent`] model intentionally has no `AsyncTaskComplete`
+    /// variant yet: the language bindings that will emit async events
+    /// (PyO3/`asyncio`, the Node inspector, etc.) are not wired in this
+    /// environment, so introducing a completion event now would be speculative
+    /// and untested against a real runtime. Consequently a task that runs to
+    /// completion in a captured trace ends in [`TaskState::Running`] (its last
+    /// observed event was a resume) or [`TaskState::Awaiting`] (it suspended and
+    /// the trace ended there).
+    ///
+    /// This state is therefore only reached explicitly, via
+    /// [`AsyncTaskTracker::mark_completed`], for callers that have out-of-band
+    /// knowledge that a task finished. When a real completion event is added to
+    /// [`ExecutionEvent`], [`AsyncTaskTracker::record`] should map it here so
+    /// completion is derived from the trace directly. Until then, downstream
+    /// views (CLI/dashboard) surface `Running`/`Awaiting` honestly rather than
+    /// guessing completion.
     Completed,
 }
 
