@@ -57,7 +57,8 @@ pub use event_store::{EventStats, EventStore};
 pub use events::{ExecutionEvent, LoopExitReason, SourceLocation, StackFrame, Value};
 pub use explainer::{ExplanationGenerator, VerbosityLevel};
 pub use filter::{
-    AcceptAllFilter, CompositeFilter, DepthFilter, EventFilter, EventTypeFilter, FunctionFilter,
+    AcceptAllFilter, CompositeFilter, DepthFilter, EventFilter, EventTypeFilter, FrequencyFilter,
+    FunctionFilter, PathFilter, TimeRangeFilter, UserFilter, ValueFilter,
 };
 pub use formatter::{
     FormatterFactory, HtmlFormatter, JsonFormatter, MarkdownFormatter, OutputFormatter,

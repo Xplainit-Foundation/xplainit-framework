@@ -2,7 +2,7 @@
   "id": "FEAT-003",
   "type": "feat",
   "description": "Task 3.3 Advanced Filtering. Add five new event filters that implement the existing EventFilter trait in xplainit-core/src/filter.rs: TimeRangeFilter, ValueFilter, FrequencyFilter (sampling), PathFilter, and UserFilter (custom predicate). Extend the existing filter abstraction rather than inventing a parallel one. This is ordered before the async work because it is self-contained and lower-risk.",
-  "status": "pending",
+  "status": "completed",
   "steps": [
     "Re-read xplainit-core/src/filter.rs to confirm the EventFilter trait signature: `fn should_capture(&self, event: &ExecutionEvent, config: &Config) -> bool;` and `fn description(&self) -> String;`. New filters implement THIS trait so they compose with CompositeFilter.",
     "TimeRangeFilter: capture only events whose event.timestamp() falls within an inclusive [start, end] window (use chrono DateTime<Utc>, already a dependency). Support open-ended bounds (Option<DateTime<Utc>> for start and/or end). should_capture returns true when the timestamp is within bounds.",
@@ -28,5 +28,5 @@
     "cargo fmt --all -- --check"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "Added five filters to xplainit-core/src/filter.rs, all implementing the existing EventFilter trait so they compose in CompositeFilter: TimeRangeFilter (inclusive Option<DateTime<Utc>> bounds, open-ended when None), ValueFilter (substring on rendered value and/or Value::type_name(), with configurable pass_without_value for events carrying no inspectable value; inspects VariableAssign/VariableDeclaration/FunctionExit/Return/TypeError/DivisionByZero/LoopIteration/FunctionEnter payloads), FrequencyFilter (deterministic 1-in-N counter using AtomicUsize interior mutability since should_capture takes &self, with always_keep_type and always_keep_errors bypasses), PathFilter (include/exclude substring + simple glob via the ModuleFilter ** -> .+ / * -> [^/\\\\]+ / ? -> . approach, exclusions win), and UserFilter (wraps a Box<dyn Fn(&ExecutionEvent,&Config)->bool + Send + Sync>; added a UserPredicate type alias to satisfy clippy::type_complexity). Added a private render_value helper (Value has no Display impl) that sorts object entries for deterministic output. Re-exported all five types plus UserPredicate is left unexported (internal alias) from lib.rs. Added 13 new #[cfg(test)] tests covering accept/reject/open-bound/passthrough/deterministic-sampling/glob/composite cases. No new dependencies added (chrono/regex already present; no rand). Verified: cargo build --release, cargo test (all crates green), cargo clippy --all-targets --all-features -- -D warnings (clean), cargo fmt --all -- --check (clean)."
 }
