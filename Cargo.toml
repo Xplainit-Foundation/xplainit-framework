@@ -5,7 +5,7 @@ members = [
     "xplainit-node",
     "xplainit-c",
     "xplainit-java",
-    # "xplainit-cli",     # Not yet implemented
+    "xplainit-cli",
 ]
 
 resolver = "2"

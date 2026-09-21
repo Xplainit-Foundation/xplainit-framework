@@ -1,0 +1,34 @@
+{
+  "id": "FEAT-005",
+  "type": "feat",
+  "description": "Task 3.5 Web Dashboard. Provide real-time trace visualization: an interactive timeline, call-graph viewer, and error aggregation. Architected as a Rust (tokio/std) single-binary web/WebSocket server that serves a static frontend and streams trace events, plus the frontend assets. SANDBOX CONSTRAINT: the Rust server CAN be built and tested here (tokio 1.53 is already in Cargo.lock); a JS build toolchain (npm/React/D3 bundling) is NOT available, so keep the frontend as hand-written static HTML/CSS/vanilla-JS (no npm build step) OR clearly document any npm-based frontend as blocked-in-sandbox. Do the Rust part for real; do not overstate any part that needs an unavailable toolchain.",
+  "status": "pending",
+  "steps": [
+    "Decide crate placement: add a new workspace member (e.g. xplainit-dashboard/) as a Rust binary crate, OR add a `dashboard` subcommand/module. Prefer a new member crate `xplainit-dashboard` added to root Cargo.toml [workspace] members. Only use dependencies already in Cargo.lock (tokio is available; do NOT add axum/warp/hyper or other new crates unless they are already present in Cargo.lock - verify first with grep on Cargo.lock, and if a needed web framework is absent, implement a minimal HTTP/WebSocket server over tokio's TcpListener rather than adding an unavailable dependency).",
+    "Verify available deps: grep Cargo.lock for tokio, tokio-tungstenite, hyper, axum, warp, serde_json. Use only what is present. If only raw tokio + serde_json are available, implement a minimal HTTP server (serve static index.html + assets) and a simple WebSocket or Server-Sent-Events endpoint that streams ExecutionEvent JSON.",
+    "Server: load a trace JSON (Vec<ExecutionEvent> from xplainit-core) or accept a live feed, and expose (a) an endpoint serving the static dashboard page and (b) a streaming endpoint that pushes events for real-time/replay visualization. Reuse xplainit-core types (ExecutionEvent, ErrorExplainer for error aggregation) rather than redefining them.",
+    "Error aggregation: use xplainit_core::ErrorExplainer over the trace to produce an aggregated error summary endpoint (counts by error_type, analyses).",
+    "Frontend: hand-written static assets (index.html + a .css + a vanilla .js, no bundler) that connect to the streaming endpoint and render an interactive timeline and a call-graph view (call graph derivable from FunctionEnter/FunctionExit nesting; timeline from event timestamps). Vanilla JS avoids the missing npm toolchain. If a richer React+D3 frontend is desired, scaffold it in a subfolder with its own package.json and document that its `npm install && npm run build` is blocked in this sandbox - but the shipped, working default must be the no-build static frontend.",
+    "Add Rust tests for the server logic that CAN run without a browser: trace loading/parsing, the error-aggregation summary (feed events incl. errors, assert aggregated counts), call-graph construction from enter/exit events, and JSON serialization of the streamed payloads. Route/handler unit tests where feasible.",
+    "Add xplainit-dashboard/README.md documenting how to run the server (cargo run -p xplainit-dashboard -- <trace.json>), what endpoints exist, and an honest 'Sandbox status' note about any optional npm-based frontend not being buildable here.",
+    "Ensure the new crate is in the workspace, builds in release, passes clippy -D warnings and fmt, and does not break existing crates or the Python suites.",
+    "Keep clippy clean (-D warnings) and run cargo fmt."
+  ],
+  "acceptance_criteria": [
+    "A Rust dashboard crate/binary builds via `cargo build --release` using only dependencies already present in Cargo.lock (no unavailable crates added).",
+    "The server loads a trace JSON of xplainit-core ExecutionEvents and exposes a static-page endpoint plus a streaming endpoint, and an error-aggregation summary computed via ErrorExplainer.",
+    "A default no-npm static frontend (HTML/CSS/vanilla JS) is shipped so the dashboard is usable without a JS build step; any React/D3 variant is clearly marked as sandbox-blocked, not claimed working.",
+    "Rust tests cover trace parsing, error aggregation, and call-graph construction and pass under cargo test.",
+    "cargo test, cargo clippy --all-targets --all-features -- -D warnings, and cargo fmt --all -- --check all pass; Python suites still pass."
+  ],
+  "verification": [
+    "grep Cargo.lock for candidate web deps before adding any",
+    "cargo build --release -p xplainit-dashboard",
+    "cargo test",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check",
+    "cargo run -p xplainit-dashboard -- <sample-trace.json> then curl the static page + streaming/summary endpoints to confirm real output (or document precisely why a runtime check is limited in-sandbox)."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

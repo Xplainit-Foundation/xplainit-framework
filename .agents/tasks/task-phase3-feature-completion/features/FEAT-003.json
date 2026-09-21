@@ -1,0 +1,32 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Task 3.3 Advanced Filtering. Add five new event filters that implement the existing EventFilter trait in xplainit-core/src/filter.rs: TimeRangeFilter, ValueFilter, FrequencyFilter (sampling), PathFilter, and UserFilter (custom predicate). Extend the existing filter abstraction rather than inventing a parallel one. This is ordered before the async work because it is self-contained and lower-risk.",
+  "status": "pending",
+  "steps": [
+    "Re-read xplainit-core/src/filter.rs to confirm the EventFilter trait signature: `fn should_capture(&self, event: &ExecutionEvent, config: &Config) -> bool;` and `fn description(&self) -> String;`. New filters implement THIS trait so they compose with CompositeFilter.",
+    "TimeRangeFilter: capture only events whose event.timestamp() falls within an inclusive [start, end] window (use chrono DateTime<Utc>, already a dependency). Support open-ended bounds (Option<DateTime<Utc>> for start and/or end). should_capture returns true when the timestamp is within bounds.",
+    "ValueFilter: capture events whose associated value(s) match a configured pattern. Inspect the Value payloads reachable from an event (e.g. VariableAssign new_value/old_value, VariableDeclaration value, FunctionExit return_value, TypeError value, FunctionEnter args). Support matching by substring on the rendered value and/or by Value variant/type_name(). Events with no inspectable value should pass through by default (configurable) so the filter does not silently drop unrelated events.",
+    "FrequencyFilter: sample high-frequency events. MUST be deterministic and counter-based (the `rand` crate is NOT available offline). Follow the existing PerformanceFilter::should_sample pattern in advanced_filter.rs (capture 1 in N by an internal counter). Because EventFilter::should_capture takes &self (not &mut self), use interior mutability (std::sync::atomic::AtomicUsize or a Mutex) for the counter so the trait signature is preserved. Allow an optional per-event-type sampling so e.g. LoopIteration can be sampled while errors are always kept.",
+    "PathFilter: include/exclude events by execution path / file path. Use event.location().file and support include globs/substrings and exclude globs/substrings, mirroring the simple glob approach already in advanced_filter.rs ModuleFilter (replace ** -> .+, * -> [^/\\]+). Exclusions win over inclusions.",
+    "UserFilter: wrap a user-provided predicate closure `Box<dyn Fn(&ExecutionEvent, &Config) -> bool + Send + Sync>`. Provide a constructor taking the closure. description() returns a static label. This gives callers arbitrary custom filtering while still implementing EventFilter.",
+    "Re-export the five new filter types from xplainit-core/src/lib.rs alongside the existing `pub use filter::{...}` list.",
+    "Add thorough #[cfg(test)] tests in filter.rs for each new filter following the existing test style (construct ExecutionEvent values with uuid::Uuid::new_v4(), chrono::Utc::now(), SourceLocation, HashMap). Cover: TimeRange in/out of window and open bounds; ValueFilter match vs no-match vs no-value passthrough; FrequencyFilter deterministic 1-in-N sequence; PathFilter include/exclude/glob; UserFilter with a real predicate. Each test must fail if the filter logic were reverted/removed.",
+    "Keep clippy clean (-D warnings) and run cargo fmt."
+  ],
+  "acceptance_criteria": [
+    "TimeRangeFilter, ValueFilter, FrequencyFilter, PathFilter, UserFilter all implement the EventFilter trait and compose inside CompositeFilter.",
+    "FrequencyFilter uses deterministic counter-based sampling with interior mutability and adds no new external dependency (no rand).",
+    "All five types are re-exported from lib.rs.",
+    "New tests in filter.rs cover each filter's accept and reject paths and pass under `cargo test`.",
+    "cargo test, cargo clippy --all-targets --all-features -- -D warnings, and cargo fmt --all -- --check all pass."
+  ],
+  "verification": [
+    "cargo test -p xplainit-core filter",
+    "cargo test",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

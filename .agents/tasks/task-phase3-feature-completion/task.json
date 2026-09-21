@@ -1,0 +1,7 @@
+{
+  "task_id": "task-phase3-feature-completion",
+  "task_description": "Phase 3 (Feature Completion, v0.3.0) of the Xplainit framework per PRODUCTION_READINESS_PLAN.md. Deliver, in order: 3.1 CLI tool (clap binary: run/explain/analyze/report), 3.2 VS Code extension (TypeScript source; build/package blocked in-sandbox by missing node/npm), 3.3 advanced filtering (TimeRange/Value/Frequency/Path/User filters on the EventFilter trait), 3.4 async/concurrency support (AsyncTaskStart/Await/Resume events + task tracking + explanations), 3.5 web dashboard (Rust tokio server + no-build static frontend; any npm frontend blocked in-sandbox). Keep the whole workspace green (cargo test, cargo clippy -D warnings, cargo fmt --check, Python suites) after every feature. New Rust features must ship with tests that fail if reverted. No PRs: work lands on branch phase3-feature-complete for orchestrator fast-forward-merge into master. Do not overstate completion; document toolchain-blocked steps honestly.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
+  "blocked_reason": null
+}

@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Task 3.2 VS Code Extension. Author a new xplainit-vscode/ TypeScript extension providing inline hover explanations, step-through visualization, an error analysis panel, and trace recording/playback, backed by the JSON trace format that xplainit-core emits and the CLI reads. SANDBOX CONSTRAINT: node/npm are absent and the VS Code marketplace/vsce is unreachable (INTEGRATIONS_ONLY), so `npm install`, TypeScript compilation via tsc, and `vsce package` CANNOT run here. Author the source honestly and completely; document the build/package/run steps as blocked-in-sandbox rather than claiming they pass.",
+  "status": "pending",
+  "steps": [
+    "Create the xplainit-vscode/ directory with the structure from the plan: package.json (extension manifest: name, engines.vscode, contributes.commands for record/playback/explain, activationEvents), tsconfig.json, and src/extension.ts, src/traceProvider.ts, src/explanationHover.ts, src/errorPanel.ts, plus syntaxes/xplainit-trace.json.",
+    "extension.ts: register the extension activate()/deactivate(), the commands (e.g. xplainit.recordTrace, xplainit.playbackTrace, xplainit.explainFunction), and register the hover provider and error panel. Use the @types/vscode API surface as documented (write against the standard vscode module even though it cannot be npm-installed here).",
+    "explanationHover.ts: implement a HoverProvider that, given a loaded trace JSON (same ExecutionEvent shape produced by xplainit-core, fields: event_type/id/timestamp/location{file,line,column}/name/etc.), returns a hover Markdown string explaining what happened at the hovered file:line. Match trace events by SourceLocation file+line.",
+    "traceProvider.ts: load a trace JSON file, index events by location and by task/function, and drive step-through visualization (a TreeDataProvider or webview timeline). Include record/playback: 'record' shells out to the xplainit CLI (from FEAT-001) to produce a trace JSON; 'playback' steps through the loaded events highlighting the corresponding source lines.",
+    "errorPanel.ts: a webview panel that lists error events from the trace (is_error semantics: exception/runtime_error/type_error/null_pointer_error/index_out_of_bounds/division_by_zero/stack_overflow/panic/etc.) with the ErrorExplainer-style analysis text, ideally by invoking `xplainit analyze` on the trace and rendering its output.",
+    "syntaxes/xplainit-trace.json: a TextMate grammar so .xplainit-trace / trace JSON files get basic syntax highlighting.",
+    "Add xplainit-vscode/README.md documenting: what the extension does; the EXACT build/run/package commands (npm install; npm run compile / tsc; F5 to launch Extension Development Host; vsce package); and an explicit 'Sandbox status' section stating these commands could not be executed here because node/npm and vsce are unavailable under INTEGRATIONS_ONLY, so the TypeScript is authored but not compiled/packaged in this environment. Do not claim a build or test passed.",
+    "Add a .gitignore entry for xplainit-vscode/node_modules and out/ (do not commit installed deps).",
+    "Sanity-check the TypeScript by hand for obvious type/consistency errors against the documented vscode API (there is no compiler available). Ensure the extension does not affect the Rust workspace build."
+  ],
+  "acceptance_criteria": [
+    "xplainit-vscode/ exists with package.json, tsconfig.json, src/extension.ts, src/traceProvider.ts, src/explanationHover.ts, src/errorPanel.ts, and syntaxes/xplainit-trace.json.",
+    "The extension source consumes the same JSON trace shape emitted by xplainit-core / the xplainit CLI (consistent field names).",
+    "README.md documents build/package steps AND explicitly records that npm/tsc/vsce could not be run in this sandbox (honest blocked status), with no false claim of a successful build.",
+    "The Rust workspace still builds and tests green (the new directory does not break cargo)."
+  ],
+  "verification": [
+    "cargo build --release  (confirm the new non-Rust directory does not affect the workspace)",
+    "cargo test",
+    "ls xplainit-vscode/src and confirm all named source files exist",
+    "Document (do not fake) that `npm install` / `tsc` / `vsce package` are unavailable in this sandbox; if a JS toolchain were present the reviewer/next environment runs `npm install && npm run compile` in xplainit-vscode/."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

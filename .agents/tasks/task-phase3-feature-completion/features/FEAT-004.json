@@ -1,0 +1,36 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Task 3.4 Async/Concurrency Support. Add async task lifecycle event variants to the ExecutionEvent enum (AsyncTaskStart / AsyncTaskAwait / AsyncTaskResume) with task tracking across await points, wire them through every exhaustive match, and generate natural-language explanations for them. Ordered after 3.3 because it touches the core event enum that many modules match on.",
+  "status": "pending",
+  "steps": [
+    "Re-read xplainit-core/src/events.rs. The ExecutionEvent enum has FIVE exhaustive `match self` methods that will fail to compile until every new variant has an arm: id(), timestamp(), is_error(), location(), event_type(). Plan to update all five.",
+    "Add three variants to ExecutionEvent following the plan sketch and the existing field conventions (every variant carries `id: Uuid` and `timestamp: DateTime<Utc>`): AsyncTaskStart { id, task_id: Uuid, task_name: String, spawned_from: SourceLocation, timestamp }; AsyncTaskAwait { id, task_id: Uuid, awaiting_on: String, location: SourceLocation, timestamp }; AsyncTaskResume { id, task_id: Uuid, resumed_with: Option<Value>, location: SourceLocation, timestamp }. Keep them Serialize/Deserialize-compatible (they derive automatically with the enum).",
+    "Update the five exhaustive methods in events.rs: id() and timestamp() return the new fields; is_error() stays false for these (they are normal lifecycle events, not errors); location() returns spawned_from for Start and location for Await/Resume; event_type() returns \"async_task_start\" / \"async_task_await\" / \"async_task_resume\".",
+    "Add explanation generation in xplainit-core/src/explainer.rs: extend the `main_text` match with arms for the three async variants producing clear sentences, e.g. 'Started async task \"{task_name}\" (id {task_id}) spawned from {file}:{line}', 'Task {task_id} is awaiting {awaiting_on}', 'Task {task_id} resumed with {value}'. Follow the existing explain_* helper style. The match currently has a `_` arm, so it compiles regardless, but these arms must be real.",
+    "Add task-tracking logic: introduce a lightweight AsyncTaskTracker (new small module or within a suitable existing module) that consumes a stream/slice of events and reconstructs per-task_id timelines (start -> await(s) -> resume(s)), so concurrent tasks and their await points can be correlated. Expose a method returning, per task_id, its ordered lifecycle events and current state (Running/Awaiting/Completed). Re-export any new public types from lib.rs.",
+    "Consider the other (non-exhaustive, `_`-guarded) matches on ExecutionEvent in error_explainer.rs, formatter.rs (text + html), filter.rs, advanced_filter.rs. They compile without changes, but add meaningful handling where it improves output (e.g. formatter.rs rendering of async events, EventTypeFilter awareness). Do not leave async events rendering as empty/blank in the formatters.",
+    "Gate anything that genuinely needs the tokio runtime behind the existing `async` cargo feature (xplainit-core already has `[features] async = [\"tokio\"]`). The event variants and tracker themselves should NOT require the async feature (they are plain data + logic), so default-feature builds keep working.",
+    "Add #[cfg(test)] tests in events.rs (variant construction + id/timestamp/is_error/location/event_type for each new variant), explainer.rs (each async variant yields the expected explanation substring), and for the AsyncTaskTracker (feed a Start/Await/Resume sequence across two interleaved task_ids and assert the reconstructed per-task timelines and states). Tests must fail if the variants or tracker were removed.",
+    "Verify serialization round-trips: a test that serde_json-serializes each new variant and deserializes it back to an equal value (so CLI analyze/report over async traces works).",
+    "Keep clippy clean (-D warnings) and run cargo fmt. Confirm the Python suites still pass since events.rs changes can ripple into the PyO3 crate."
+  ],
+  "acceptance_criteria": [
+    "ExecutionEvent has AsyncTaskStart, AsyncTaskAwait, AsyncTaskResume variants and the whole workspace compiles (all five exhaustive match methods updated).",
+    "ExplanationGenerator produces distinct, correct natural-language text for each async variant.",
+    "An AsyncTaskTracker reconstructs per-task_id lifecycle timelines and states across interleaved tasks, with tests proving it.",
+    "New async events serialize and deserialize round-trip via serde_json.",
+    "Default-feature builds (without the `async` feature) still build and pass.",
+    "cargo test, cargo clippy --all-targets --all-features -- -D warnings, cargo fmt --all -- --check pass, and the Python suites (test_automatic_tracing.py, test_frame_filter.py, test_depth_accounting.py, test_decorators.py) still pass after rebuilding the module with maturin."
+  ],
+  "verification": [
+    "cargo build --release",
+    "cargo build --release --features async -p xplainit-core",
+    "cargo test",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo fmt --all -- --check",
+    "source .venv/bin/activate && cd xplainit-python && maturin develop --release && python test_automatic_tracing.py && python test_frame_filter.py && python test_depth_accounting.py && python test_decorators.py"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
