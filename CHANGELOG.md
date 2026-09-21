@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - Phase 4: Production Hardening
+
+Phase 4 focused on making the framework safer, more resilient, better measured,
+more thoroughly tested, and honestly documented. See
+[`docs/STATUS.md`](docs/STATUS.md) for the authoritative project status.
+
+### Security hardening (Task 4.1)
+- **Secret/PII redaction, on by default.** New `Config` fields `redact_secrets`
+  (default `true`) and `redact_key_patterns` (defaults: `password`, `passwd`,
+  `secret`, `token`, `api_key`, `apikey`, `authorization`, `auth`, `credential`,
+  `private_key`). Values whose key matches (case-insensitive substring) are
+  replaced with `<redacted>` before leaving the process, via a single choke
+  point (`ExecutionEvent::redacted()` / `redact_events()`), including secrets
+  nested inside object/array payloads and single-value fields
+  (`FunctionExit.return_value`, `Return.value`, `AsyncTaskResume.resumed_with`,
+  `LoopIteration.loop_var_value`, `TypeError.value`, `DivisionByZero.numerator`).
+- **Input-path validation** (`validate_input_path`) for user-supplied trace/log
+  paths (rejects empty, embedded-NUL, missing, and non-file paths).
+- **`unsafe` FFI/JNI audit:** every `unsafe` block in `xplainit-c` and
+  `xplainit-java` now carries a `// SAFETY:` comment and null-guards raw
+  pointers.
+- Dependency/supply-chain approach documented in
+  [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md). **Blocked offline:**
+  `cargo audit`, `cargo outdated`, `cargo vet` (exact commands provided; no
+  output fabricated).
+
+### Error recovery (Task 4.2)
+- **Circuit-breaker + telemetry** in `RuntimeControl`: `max_consecutive_errors`
+  (default 5; `0` disables) trips the breaker and auto-disables tracing after
+  consecutive framework errors; `record_success()` resets the counter.
+  Telemetry: `total_errors`, `total_panics`, `times_tripped`.
+- **`debug_mode`** (config field and `XPLAINIT_DEBUG` env var): framework errors
+  are logged to stderr when on, counted and swallowed when off.
+- Documented that the release profile is `panic = "abort"`, so `catch_unwind`
+  in `safe_execute` cannot catch panics in release builds — the circuit-breaker
+  is the profile-independent recovery mechanism.
+
+### Performance (Task 4.3)
+- Hot-path clone/allocation reductions with byte-identical output (golden-tested):
+  `ExecutionEvent::location_ref()` on the filter path (~1.9x faster path filter),
+  `MemorySink` overflow eviction via `VecDeque::pop_front()` (~28x faster),
+  and single pre-sized `String` in `format_events`.
+- Std-only benchmark harness (`examples/bench_pipeline.rs`).
+- **Honest numbers** in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md): Python
+  full-tracing overhead is ~1200x; the `<10%` target is **not achievable for
+  full tracing** and is only approachable via selective tracing. Speculative
+  concurrency was evaluated and declined. **Blocked offline:**
+  `cargo-flamegraph`.
+
+### Testing (Task 4.4)
+- Extensive unit, integration, edge-case, hand-rolled property-style, and
+  in-process load/stress tests (242 tests passing, +1 `#[ignore]`d soak test,
+  0 failures). Details in [`docs/TESTING.md`](docs/TESTING.md). **Blocked
+  offline:** `cargo tarpaulin` (coverage) and `cargo-fuzz` (fuzzing) — intent
+  met by hand-rolled generative property tests; commands provided, no output
+  fabricated.
+
+### Documentation (Task 4.5)
+- `cargo doc --all --no-deps` builds with **zero warnings**; public items are
+  documented across crates.
+- New plain-Markdown **user guide** under [`docs/guide/`](docs/guide/)
+  (intro, getting-started, per-language guides, advanced topics) and
+  **reference docs** under [`docs/reference/`](docs/reference/) (events,
+  configuration, filtering, async), grounded in the actual source.
+- New [`docs/STATUS.md`](docs/STATUS.md) single source of truth; historical
+  root `*_COMPLETE.md` status files annotated as non-authoritative.
+- **Blocked offline:** `mdbook` (the guide ships as plain Markdown; the build
+  command is provided for when tooling is available).
+
+### Honesty notes
+- CLI live tracing of arbitrary programs is **not wired** (`run` renders
+  captured traces and directs users to the appropriate binding to capture one).
+- Node addon cannot be rebuilt offline (no `npm`).
+
 ### Phase 1 Fixes (2026-01) — Runtime hook + AST correctness
 
 #### Fixed

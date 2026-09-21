@@ -1,3 +1,8 @@
+> **⚠️ Historical document — not authoritative.** This file describes an early
+> phase and may overstate completeness. For the true, current status of the
+> project (what works, what is limited, and what is blocked offline) see the
+> single source of truth: [`docs/STATUS.md`](docs/STATUS.md).
+
 # 🎉 Phase 1 Complete: Project Setup & Architecture Design
 
 ## ✅ What We Built

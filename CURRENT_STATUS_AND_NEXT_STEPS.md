@@ -1,3 +1,7 @@
+> **⚠️ Historical document — not authoritative.** This dated snapshot predates
+> Phase 4 and may overstate completeness. For the true, current status of the
+> project see the single source of truth: [`docs/STATUS.md`](docs/STATUS.md).
+
 # Xplainit Framework - Current Status & Next Steps
 
 **Date:** September 20, 2026  

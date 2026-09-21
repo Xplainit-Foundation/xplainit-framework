@@ -1,3 +1,7 @@
+> **⚠️ Historical document — not authoritative.** Dated snapshot that may
+> overstate completeness. For the true, current status of the project see the
+> single source of truth: [`docs/STATUS.md`](docs/STATUS.md).
+
 # 📘 XPLAINIT FRAMEWORK - EXECUTIVE SUMMARY
 
 **Date:** January 11, 2026  

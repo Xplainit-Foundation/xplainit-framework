@@ -1,3 +1,7 @@
+> **⚠️ Historical document — not authoritative.** This file predates Phase 4 and
+> may overstate completeness. For the true, current status of the project see
+> the single source of truth: [`docs/STATUS.md`](docs/STATUS.md).
+
 # Xplainit Python Bindings - Implementation Complete ✅
 
 ## Executive Summary
