@@ -16,21 +16,68 @@ go get github.com/xplainit/xplainit-go
 
 ## Building
 
-First, build the C library:
+First, build the C library from the repository root (it is a Cargo workspace):
 
 ```bash
-cd ../xplainit-c
 cargo build --release
 ```
 
-Then you can use the Go bindings:
+Then build the Go bindings:
 
 ```bash
-cd ../xplainit-go
-go build
+cd xplainit-go
+LD_LIBRARY_PATH=../target/release CGO_LDFLAGS='-L../target/release -lxplainit_c' go build ./...
 ```
 
+## Runtime Tracing Status
+
+Go does not expose a runtime tracing hook comparable to Python's `sys.settrace`,
+so Xplainit-Go captures events through an **explicit, manual API** backed by the
+C FFI:
+
+- `OnFunctionEnter` / `OnFunctionExit` / `OnException` record events directly.
+- `Trace` is the idiomatic `defer`-based wrapper built on top of them.
+
+This manual/defer-based tracing is **implemented and verified end to end** in this
+sandbox: `go test ./...` passes and the example program captures real function
+enter/exit events (including recursion) plus an exception event through the native
+library.
+
+**Automatic instrumentation** (transparently tracing arbitrary Go code without
+manual `Trace` calls) is **future work**. It would require either a debugger such
+as [delve](https://github.com/go-delve/delve) or source-level code generation to
+inject the `Trace` calls; neither is included yet.
+
 ## Usage
+
+### Recording Events
+
+```go
+tracer := xplainit.New()
+defer tracer.Close()
+tracer.Enable()
+
+// Record events explicitly.
+tracer.OnFunctionEnter("compute", "compute.go", 10)
+tracer.OnFunctionExit("compute", "compute.go", 10)
+tracer.OnException("DivisionByZero", "division by zero", "math.go", 42)
+```
+
+### Idiomatic defer-based Tracing
+
+`Trace` records the enter event immediately and returns a closure that records the
+exit event. Invoke it and `defer` the returned closure with a trailing `()`:
+
+```go
+func myFunc(tracer *xplainit.Xplainit) {
+    defer tracer.Trace("myFunc", "file.go", 12)()
+    // ... function body ...
+}
+```
+
+> **Note on draining:** both `GetStatistics()` and `GetEvents()` read *and drain*
+> the underlying event store. Calling one empties it for the other. Read whichever
+> you need first, or record fresh events before the second call.
 
 ### Basic Usage
 
@@ -148,6 +195,35 @@ Get statistics about captured events.
 
 **Returns:** Pointer to Statistics struct
 
+> Reads and **drains** the event store, like `GetEvents()`.
+
+### `(*Xplainit) OnFunctionEnter(name, file string, line int) bool`
+
+Record a function-entry event. Only recorded while tracing is enabled.
+
+**Returns:** `true` if the event was recorded.
+
+### `(*Xplainit) OnFunctionExit(name, file string, line int) bool`
+
+Record a function-exit event. Only recorded while tracing is enabled.
+
+**Returns:** `true` if the event was recorded.
+
+### `(*Xplainit) OnException(errType, message, file string, line int) bool`
+
+Record an exception/error event. Only recorded while tracing is enabled.
+
+**Returns:** `true` if the event was recorded.
+
+### `(*Xplainit) Trace(name, file string, line int) func()`
+
+Record a function-entry event immediately and return a closure that records the
+matching exit event when called. Designed for use with `defer`:
+
+```go
+defer tracer.Trace("myFunc", "file.go", 12)()
+```
+
 ### `(*Xplainit) Close() error`
 
 Free native resources. Should be called with `defer`.
@@ -176,17 +252,32 @@ See the `examples/` directory:
 
 - `basic.go` - Simple usage demonstration
 
-## Building Examples
+## Building and Running (verified commands)
+
+The C library must be built and resolvable at both link time and run time. From
+the repository root:
 
 ```bash
-# Build the C library first
-cd ../xplainit-c
+# 1. Build the native C library (produces target/release/libxplainit_c.{a,so}).
 cargo build --release
 
-# Build and run the Go example
-cd ../xplainit-go
-go run examples/basic.go
+# 2. Build, test, and run from the Go module directory.
+cd xplainit-go
+
+# Build (CGO_LDFLAGS points the linker at the built library):
+LD_LIBRARY_PATH=../target/release CGO_LDFLAGS='-L../target/release -lxplainit_c' go build ./...
+
+# Test:
+LD_LIBRARY_PATH=../target/release CGO_LDFLAGS='-L../target/release -lxplainit_c' go test ./...
+
+# Run the example (LD_LIBRARY_PATH lets the .so resolve at run time):
+LD_LIBRARY_PATH=../target/release go run ./examples/basic.go
 ```
+
+The cgo preamble in `xplainit.go` already sets the default `-L${SRCDIR}/../target/release`
+link path, so `CGO_LDFLAGS` is only needed when running from a different directory.
+`LD_LIBRARY_PATH` (or an rpath / static link) is required at run time so the dynamic
+loader can find `libxplainit_c.so`.
 
 ## Environment Variables
 
