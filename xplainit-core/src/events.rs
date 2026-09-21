@@ -420,6 +420,45 @@ impl ExecutionEvent {
         )
     }
 
+    /// Get a borrowed reference to the event's source location, if it carries
+    /// one.
+    ///
+    /// This is the allocation-free counterpart to [`location`](Self::location):
+    /// hot paths that only need to read the file/line (filters, analysis)
+    /// should prefer this so they avoid cloning the whole [`SourceLocation`]
+    /// (which owns a `String` file path) on every event. Variants that do not
+    /// carry a location (for example `FunctionExit`, `LoopIteration`) return
+    /// `None` here, matching the `SourceLocation::unknown()` fallback that
+    /// [`location`](Self::location) returns for them.
+    pub fn location_ref(&self) -> Option<&SourceLocation> {
+        match self {
+            ExecutionEvent::FunctionEnter { location, .. } => Some(location),
+            ExecutionEvent::FunctionExit { .. } => None,
+            ExecutionEvent::VariableDeclaration { location, .. } => Some(location),
+            ExecutionEvent::VariableAssign { location, .. } => Some(location),
+            ExecutionEvent::ConditionalEval { location, .. } => Some(location),
+            ExecutionEvent::LoopEntry { location, .. } => Some(location),
+            ExecutionEvent::LoopIteration { .. } => None,
+            ExecutionEvent::LoopExit { .. } => None,
+            ExecutionEvent::Return { location, .. } => Some(location),
+            ExecutionEvent::Exception { location, .. } => Some(location),
+            ExecutionEvent::SyntaxError { location, .. } => Some(location),
+            ExecutionEvent::RuntimeError { location, .. } => Some(location),
+            ExecutionEvent::TypeError { location, .. } => Some(location),
+            ExecutionEvent::NullPointerError { location, .. } => Some(location),
+            ExecutionEvent::IndexOutOfBounds { location, .. } => Some(location),
+            ExecutionEvent::DivisionByZero { location, .. } => Some(location),
+            ExecutionEvent::StackOverflow { location, .. } => Some(location),
+            ExecutionEvent::Panic { location, .. } => Some(location),
+            ExecutionEvent::InfiniteLoopDetected { location, .. } => Some(location),
+            ExecutionEvent::DeadlockDetected { .. } => None,
+            ExecutionEvent::MemoryLeakDetected { .. } => None,
+            ExecutionEvent::AsyncTaskStart { spawned_from, .. } => Some(spawned_from),
+            ExecutionEvent::AsyncTaskAwait { location, .. } => Some(location),
+            ExecutionEvent::AsyncTaskResume { location, .. } => Some(location),
+        }
+    }
+
     /// Get the event's source location
     pub fn location(&self) -> SourceLocation {
         match self {

@@ -4,6 +4,7 @@
 
 use crate::{ExecutionEvent, OutputFormat, Result, XplainitError};
 use parking_lot::Mutex;
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -179,20 +180,20 @@ impl EventSink for FileSink {
 /// Memory sink - stores events in memory
 #[derive(Debug, Clone)]
 pub struct MemorySink {
-    events: Arc<Mutex<Vec<ExecutionEvent>>>,
+    events: Arc<Mutex<VecDeque<ExecutionEvent>>>,
     max_events: usize,
 }
 
 impl MemorySink {
     pub fn new(max_events: usize) -> Self {
         Self {
-            events: Arc::new(Mutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(VecDeque::new())),
             max_events,
         }
     }
 
     pub fn get_events(&self) -> Vec<ExecutionEvent> {
-        self.events.lock().clone()
+        self.events.lock().iter().cloned().collect()
     }
 
     pub fn clear(&self) {
@@ -204,12 +205,14 @@ impl EventSink for MemorySink {
     fn write(&mut self, event: &ExecutionEvent) -> Result<()> {
         let mut events = self.events.lock();
 
-        // Limit memory usage
+        // Limit memory usage. A VecDeque pops the oldest event in O(1),
+        // whereas the previous `Vec::remove(0)` shifted every element on each
+        // overflow (O(n)); the observable FIFO ordering is unchanged.
         if events.len() >= self.max_events {
-            events.remove(0); // Remove oldest
+            events.pop_front(); // Remove oldest
         }
 
-        events.push(event.clone());
+        events.push_back(event.clone());
         Ok(())
     }
 

@@ -325,10 +325,14 @@ impl PerformanceFilter {
             _ => {}
         }
 
-        // Check file path against hot paths
-        let location = event.location();
+        // Check file path against hot paths. Borrow the path instead of
+        // cloning the whole SourceLocation; fall back to the same "<unknown>"
+        // sentinel `location()` used so the decision is unchanged.
+        let file: &str = event
+            .location_ref()
+            .map_or("<unknown>", |loc| loc.file.as_str());
         for pattern in &self.hot_paths {
-            if location.file.contains(pattern) {
+            if file.contains(pattern) {
                 return true;
             }
         }
@@ -388,9 +392,12 @@ impl AdvancedFilter {
 
     /// Check if event should be captured (combines all filters)
     pub fn should_capture(&mut self, event: &ExecutionEvent, thread_id: &str) -> bool {
-        // Module filter
-        let location = event.location();
-        if self.module_filter.should_filter_file(&location.file) {
+        // Module filter. Borrow the path to avoid cloning SourceLocation;
+        // fall back to the same "<unknown>" sentinel `location()` used.
+        let file: &str = event
+            .location_ref()
+            .map_or("<unknown>", |loc| loc.file.as_str());
+        if self.module_filter.should_filter_file(file) {
             return false;
         }
 

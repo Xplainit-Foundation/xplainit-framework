@@ -609,10 +609,18 @@ impl PathFilter {
 
 impl EventFilter for PathFilter {
     fn should_capture(&self, event: &ExecutionEvent, _config: &Config) -> bool {
-        let path = event.location().file;
+        // Borrow the file path instead of cloning the whole SourceLocation.
+        // For variants that carry no location we fall back to the same
+        // "<unknown>" sentinel that `location()` used to synthesize, so the
+        // filtering decision is byte-for-byte identical to the pre-refactor
+        // behavior while avoiding a per-event String clone on the common path.
+        const UNKNOWN_FILE: &str = "<unknown>";
+        let path: &str = event
+            .location_ref()
+            .map_or(UNKNOWN_FILE, |loc| loc.file.as_str());
 
         // Exclusions win over everything.
-        if self.exclude.iter().any(|p| Self::pattern_matches(p, &path)) {
+        if self.exclude.iter().any(|p| Self::pattern_matches(p, path)) {
             return false;
         }
 
@@ -621,7 +629,7 @@ impl EventFilter for PathFilter {
             return true;
         }
 
-        self.include.iter().any(|p| Self::pattern_matches(p, &path))
+        self.include.iter().any(|p| Self::pattern_matches(p, path))
     }
 
     fn description(&self) -> String {

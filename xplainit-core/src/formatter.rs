@@ -11,11 +11,18 @@ pub trait OutputFormatter: Send + Sync {
 
     /// Format multiple events
     fn format_events(&self, events: &[ExecutionEvent]) -> String {
-        events
-            .iter()
-            .map(|e| self.format_event(e))
-            .collect::<Vec<_>>()
-            .join("\n")
+        // Build into a single pre-sized buffer instead of collecting a
+        // `Vec<String>` and joining it. The output is identical to a
+        // `"\n"`-join: each event's formatted text separated by a single
+        // newline, with no trailing newline.
+        let mut out = String::new();
+        for (i, event) in events.iter().enumerate() {
+            if i > 0 {
+                out.push('\n');
+            }
+            out.push_str(&self.format_event(event));
+        }
+        out
     }
 
     /// Get format name
