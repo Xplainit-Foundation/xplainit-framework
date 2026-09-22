@@ -31,3 +31,9 @@ Documentation = "https://xplainit.readthedocs.io"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+# Mixed Rust/Python layout: the compiled extension is merged into the
+# ``xplainit`` package defined under ``python_src`` so that the pure-Python
+# helper subpackage ``xplainit.python`` (tracer + decorators) ships inside the
+# installed wheel. This is what lets ``xplainit.auto_trace()`` import
+# ``xplainit.python.tracer`` at runtime from an installed package.
+python-source = "python_src"

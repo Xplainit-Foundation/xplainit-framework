@@ -29,8 +29,10 @@ fn xplainit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_disable, m)?)?;
     m.add_function(wrap_pyfunction!(py_is_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(explain_function, m)?)?;
+    m.add_function(wrap_pyfunction!(explain_backend_py, m)?)?;
     m.add_function(wrap_pyfunction!(get_last_explanation, m)?)?;
     m.add_function(wrap_pyfunction!(auto_trace, m)?)?;
+    m.add_function(wrap_pyfunction!(disable_auto_trace, m)?)?;
 
     Ok(())
 }
@@ -257,10 +259,40 @@ fn py_is_enabled() -> bool {
         .unwrap_or(false)
 }
 
-/// Decorator function to explain a specific function
+/// Process-wide backend used by the bare `@explain_function` decorator so the
+/// calls it wraps are actually recorded somewhere retrievable.
+static EXPLAIN_BACKEND: once_cell::sync::OnceCell<Py<Xplainit>> = once_cell::sync::OnceCell::new();
+
+/// Get (lazily creating) the shared backend used by `@explain_function`.
+fn explain_backend(py: Python<'_>) -> PyResult<Py<Xplainit>> {
+    if let Some(backend) = EXPLAIN_BACKEND.get() {
+        return Ok(backend.clone_ref(py));
+    }
+    let backend = Py::new(py, Xplainit::new(true, "normal", "stdout")?)?;
+    // If another thread raced us, keep the first one stored.
+    let _ = EXPLAIN_BACKEND.set(backend.clone_ref(py));
+    Ok(EXPLAIN_BACKEND.get().unwrap().clone_ref(py))
+}
+
+/// Decorator to explain (trace) a specific function.
+///
+/// Returns a real callable wrapper. Errors are propagated (never swallowed
+/// into `None`, which would turn the decorated function into a non-callable).
 #[pyfunction]
-fn explain_function(func: &Bound<'_, PyAny>) -> PyObject {
-    decorators::create_explain_decorator(func).unwrap_or_else(|_| func.py().None())
+fn explain_function(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+    let backend = explain_backend(py)?;
+    let backend_bound = backend.bind(py);
+    decorators::create_explain_decorator(func, backend_bound.as_any())
+}
+
+/// Return the shared backend that `@explain_function` records into.
+///
+/// Lets callers inspect the events captured by decorated functions, e.g.
+/// `json.loads(xplainit.explain_backend().get_events())`.
+#[pyfunction]
+#[pyo3(name = "explain_backend")]
+fn explain_backend_py(py: Python<'_>) -> PyResult<Py<Xplainit>> {
+    explain_backend(py)
 }
 
 /// Get last explanation from global instance
@@ -273,106 +305,178 @@ fn get_last_explanation() -> String {
         .unwrap_or_else(|| "No explanations available".to_string())
 }
 
-/// Automatic tracer using sys.settrace()
+/// Automatic tracer using sys.settrace().
+///
+/// Unlike the earlier no-op version, this class installs a real
+/// `sys.settrace()` hook by delegating to the pure-Python
+/// `xplainit.python.tracer.AutoTracer`, wiring it to an internal
+/// [`Xplainit`] backend. Function enter/exit and exception events are
+/// therefore captured for real and are retrievable via [`AutoTracer::get_events`].
 #[pyclass]
 struct AutoTracer {
-    xplainit: Xplainit,
-    enabled: Arc<RwLock<bool>>,
+    /// The Rust backend that actually records events. Held as a `Py<Xplainit>`
+    /// so it can be handed to the Python tracer as its `backend`.
+    backend: Py<Xplainit>,
+    /// The live `xplainit.python.tracer.AutoTracer` instance while tracing is
+    /// active (installs/removes the `sys.settrace()` hook). `None` when stopped.
+    py_tracer: RwLock<Option<PyObject>>,
 }
 
 #[pymethods]
 impl AutoTracer {
     #[new]
     #[pyo3(signature = (_backend=None))]
-    fn new(_backend: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
-        let xplainit = Xplainit::new(true, "normal", "stdout")?;
+    fn new(py: Python<'_>, _backend: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let backend = Py::new(py, Xplainit::new(true, "normal", "stdout")?)?;
 
         Ok(Self {
-            xplainit,
-            enabled: Arc::new(RwLock::new(false)),
+            backend,
+            py_tracer: RwLock::new(None),
         })
     }
 
-    /// Start automatic tracing
-    fn start(&self) -> PyResult<()> {
-        *self.enabled.write() = true;
-        self.xplainit.enable();
-        // Note: Actual sys.settrace() installation happens in Python code
-        // This just marks the tracer as ready
+    /// Start automatic tracing.
+    ///
+    /// Installs a real `sys.settrace()` hook via the Python tracer, forwarding
+    /// captured events into this instance's backend.
+    fn start(&self, py: Python<'_>) -> PyResult<()> {
+        // Already tracing? Make start() idempotent.
+        if self.py_tracer.read().is_some() {
+            return Ok(());
+        }
+
+        self.backend.borrow(py).enable();
+
+        let tracer_module = py.import_bound("xplainit.python.tracer")?;
+        let auto_tracer_class = tracer_module.getattr("AutoTracer")?;
+        // Pass our Rust backend as the `backend=` keyword so the Python tracer
+        // forwards on_function_enter/exit/exception into it.
+        let kwargs = PyDict::new_bound(py);
+        kwargs.set_item("backend", self.backend.clone_ref(py))?;
+        let py_tracer = auto_tracer_class.call((), Some(&kwargs))?;
+        py_tracer.call_method0("start")?;
+
+        *self.py_tracer.write() = Some(py_tracer.into());
         Ok(())
     }
 
-    /// Stop automatic tracing
-    fn stop(&self) -> PyResult<()> {
-        *self.enabled.write() = false;
-        self.xplainit.disable();
+    /// Stop automatic tracing and remove the `sys.settrace()` hook.
+    fn stop(&self, py: Python<'_>) -> PyResult<()> {
+        let tracer = self.py_tracer.write().take();
+        if let Some(tracer) = tracer {
+            tracer.call_method0(py, "stop")?;
+        }
+        self.backend.borrow(py).disable();
         Ok(())
     }
 
     /// Check if tracing is active
     fn is_active(&self) -> bool {
-        *self.enabled.read()
+        self.py_tracer.read().is_some()
     }
 
-    /// Get captured events
-    fn get_events(&self) -> String {
-        self.xplainit.get_events()
+    /// Get captured events as a Python list (parsed from the backend JSON).
+    ///
+    /// Returns a `list` of event dicts rather than a raw JSON string, so
+    /// callers can iterate real events instead of characters.
+    fn get_events(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let events_json = self.backend.borrow(py).get_events();
+        let json_module = py.import_bound("json")?;
+        let parsed = json_module.call_method1("loads", (events_json,))?;
+        Ok(parsed.into())
+    }
+
+    /// Get captured events as the raw backend JSON string.
+    fn get_events_json(&self, py: Python<'_>) -> String {
+        self.backend.borrow(py).get_events()
     }
 
     /// Get statistics
-    fn get_stats(&self) -> String {
-        self.xplainit.get_stats()
+    fn get_stats(&self, py: Python<'_>) -> String {
+        self.backend.borrow(py).get_stats()
+    }
+
+    /// Access the underlying backend instance.
+    fn backend(&self, py: Python<'_>) -> Py<Xplainit> {
+        self.backend.clone_ref(py)
     }
 
     /// Pass-through callback for function enter
     fn on_function_enter(
         &self,
+        py: Python<'_>,
         name: String,
         args: &Bound<'_, PyDict>,
         filename: String,
         line: usize,
     ) -> PyResult<()> {
-        self.xplainit.on_function_enter(name, args, filename, line)
+        self.backend
+            .borrow(py)
+            .on_function_enter(name, args, filename, line)
     }
 
     /// Pass-through callback for function exit
     fn on_function_exit(
         &self,
+        py: Python<'_>,
         name: String,
         return_value: String,
         filename: String,
         line: usize,
     ) -> PyResult<()> {
-        self.xplainit
+        self.backend
+            .borrow(py)
             .on_function_exit(name, return_value, filename, line)
     }
 
     /// Pass-through callback for exceptions
     fn on_exception(
         &self,
+        py: Python<'_>,
         exc_type: String,
         exc_message: String,
         filename: String,
         line: usize,
     ) -> PyResult<()> {
-        self.xplainit
+        self.backend
+            .borrow(py)
             .on_exception(exc_type, exc_message, filename, line)
     }
 }
 
-/// Convenience function to start auto-tracing
+/// Convenience function to start auto-tracing.
+///
+/// Enables real `sys.settrace()`-based tracing via the pure-Python
+/// `xplainit.python.tracer` module and returns the backend instance that
+/// receives events, so callers can retrieve them with `backend.get_events()`.
+/// Call [`disable_auto_trace`] to stop.
 #[pyfunction]
 #[pyo3(signature = (backend=None))]
-fn auto_trace(backend: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
-    // This function will be called from Python
-    // It should import and use the Python AutoTracer class
-    Python::with_gil(|py| {
-        let tracer_module = py.import_bound("xplainit.python.tracer")?;
-        let auto_tracer_class = tracer_module.getattr("AutoTracer")?;
-        let auto_tracer = auto_tracer_class.call1((backend,))?;
-        auto_tracer.call_method0("start")?;
-        Ok(())
-    })
+fn auto_trace(py: Python<'_>, backend: Option<&Bound<'_, PyAny>>) -> PyResult<PyObject> {
+    let tracer_module = py.import_bound("xplainit.python.tracer")?;
+
+    // Reuse a caller-provided backend, otherwise create a default Xplainit one
+    // so events are actually captured (a None backend records nothing).
+    let backend_obj: PyObject = match backend {
+        Some(b) => b.clone().into(),
+        None => Py::new(py, Xplainit::new(true, "normal", "stdout")?)?.into_py(py),
+    };
+
+    let kwargs = PyDict::new_bound(py);
+    kwargs.set_item("backend", &backend_obj)?;
+    // enable_tracing installs sys.settrace() and stores a module-global tracer
+    // that disable_auto_trace()/disable_tracing() can later tear down.
+    tracer_module.call_method("enable_tracing", (), Some(&kwargs))?;
+
+    Ok(backend_obj)
+}
+
+/// Convenience function to stop auto-tracing started via [`auto_trace`].
+#[pyfunction]
+fn disable_auto_trace(py: Python<'_>) -> PyResult<()> {
+    let tracer_module = py.import_bound("xplainit.python.tracer")?;
+    tracer_module.call_method0("disable_tracing")?;
+    Ok(())
 }
 
 // ===== Helper Functions =====

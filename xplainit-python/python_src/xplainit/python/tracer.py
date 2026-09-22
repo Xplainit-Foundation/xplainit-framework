@@ -1,0 +1,651 @@
+"""
+Xplainit Automatic Tracer using sys.settrace()
+
+This module provides automatic tracing by hooking into Python's
+sys.settrace() mechanism. It captures function calls, returns,
+exceptions, and line executions automatically.
+"""
+
+import sys
+import inspect
+import os
+import threading
+from typing import Optional, Dict, Any, Set
+import time
+
+
+def _stdlib_locations():
+    """
+    Collect filesystem locations that hold the Python standard library and
+    installed third-party packages. Frames whose source file lives under any
+    of these locations are treated as "not user code" and excluded from
+    tracing.
+    """
+    locations = set()
+
+    # sys.prefix / sys.base_prefix cover the interpreter's stdlib install.
+    for prefix in {sys.prefix, sys.base_prefix, sys.exec_prefix,
+                   getattr(sys, 'base_exec_prefix', sys.exec_prefix)}:
+        if prefix:
+            locations.add(os.path.realpath(prefix))
+
+    # sys.path entries that look like stdlib / site-packages directories.
+    for entry in sys.path:
+        if not entry:
+            continue
+        real = os.path.realpath(entry)
+        base = os.path.basename(real)
+        if base in ('site-packages', 'dist-packages') or \
+                (os.sep + 'lib' + os.sep + 'python') in (real + os.sep):
+            locations.add(real)
+
+    # The directory that actually contains a known stdlib module (os).
+    try:
+        locations.add(os.path.realpath(os.path.dirname(os.__file__)))
+    except Exception:
+        pass
+
+    return frozenset(locations)
+
+
+class AutoTracer:
+    """
+    Automatic tracer that integrates with Python's sys.settrace().
+    
+    This class provides the bridge between Python's tracing mechanism
+    and the Rust backend (xplainit.Xplainit instance).
+    
+    Usage:
+        tracer = AutoTracer(backend=xplainit_instance)
+        tracer.start()
+        # ... Python code runs automatically traced ...
+        tracer.stop()
+    """
+    
+    def __init__(self, backend=None, 
+                 trace_calls: bool = True,
+                 trace_returns: bool = True,
+                 trace_exceptions: bool = True,
+                 trace_lines: bool = False,  # Expensive!
+                 include_modules: Optional[Set[str]] = None,
+                 exclude_modules: Optional[Set[str]] = None,
+                 max_depth: int = 100,
+                 sampling_rate: float = 1.0):
+        """
+        Initialize the automatic tracer.
+        
+        Args:
+            backend: xplainit.Xplainit instance (Rust backend)
+            trace_calls: Trace function calls (default: True)
+            trace_returns: Trace function returns (default: True)
+            trace_exceptions: Trace exceptions (default: True)
+            trace_lines: Trace line executions (default: False - expensive!)
+            include_modules: Set of module name patterns to trace (e.g., {'myapp', 'mylib.*'})
+                            If None, traces all user code (excluding stdlib)
+            exclude_modules: Set of module names to exclude from tracing
+            max_depth: Maximum call depth to trace (prevent stack overflow)
+            sampling_rate: Fraction of calls to trace (0.0 to 1.0, default 1.0 = all)
+        """
+        self.backend = backend
+        self.trace_calls = trace_calls
+        self.trace_returns = trace_returns
+        self.trace_exceptions = trace_exceptions
+        self.trace_lines = trace_lines
+        self.include_modules = include_modules
+        self.exclude_modules = exclude_modules or set()
+        self.max_depth = max_depth
+        self.sampling_rate = max(0.0, min(1.0, sampling_rate))
+        
+        # Thread-local storage for recursion depth
+        self._thread_local = threading.local()
+        
+        # Track if tracing is active
+        self._active = False
+        self._previous_trace = None
+        
+        self._cache_enabled = True
+
+        # Performance optimization: Cache trace decisions per source filename.
+        # Keyed on the frame's co_filename so user code (including __main__)
+        # is decided once and reused.
+        self._file_cache: Dict[str, bool] = {}
+
+        # Filesystem locations that hold the stdlib / installed packages.
+        # Frames whose source file lives under these paths are user-excluded.
+        self._stdlib_locations = _stdlib_locations()
+
+        # The tracer's own source file. We must never trace ourselves, or we
+        # would recurse infinitely. Matching by filename is robust: it does not
+        # accidentally skip user code that merely contains the word "tracer".
+        try:
+            self._self_filename = os.path.realpath(__file__)
+        except Exception:
+            self._self_filename = None
+
+        # Performance optimization: Pre-compile stdlib exclusion list.
+        # NOTE: '__main__' is intentionally NOT excluded here - user scripts run
+        # under module __name__ == '__main__' and must be traced. Standard
+        # library exclusion is primarily driven by source-file location (see
+        # _stdlib_locations); this name list is a fast-path fallback.
+        self._stdlib_prefixes = frozenset([
+            'sys', 'os', 'io', 'abc', 'codecs', 'encodings',
+            'importlib', 'collections', 'typing', 'functools',
+            'threading', 'weakref', 'contextlib', 'traceback',
+            'tokenize', 'token', 'linecache', 'dis', 'opcode',
+            'pkgutil', 'zipimport',
+            'stat', 'ntpath', 'posixpath', 'genericpath', 'nt',
+            'posix', 'errno', 'pwd', 'grp', 'termios', 'tty',
+            'pty', 'fcntl', 'pipes', 'signal', 'mmap', 'ctypes',
+            'array', 'struct', 'codecs', 'unicodedata', 'string',
+            're', 'difflib', 'textwrap', 'unicodedata', 'stringprep',
+            'readline', 'rlcompleter', 'pickle', 'shelve', 'dbm',
+            'sqlite3', 'json', 'csv', 'configparser', 'netrc',
+            'xdrlib', 'plistlib', 'html', 'xml', 'xmlrpc',
+            'email', 'mailbox', 'mimetypes', 'base64', 'binascii',
+            'quopri', 'uu', 'html', 'xml', 'webbrowser', 'cgi',
+            'cgitb', 'wsgiref', 'urllib', 'http', 'ftplib',
+            'poplib', 'imaplib', 'smtplib', 'smtpd', 'telnetlib',
+            'nntplib', 'socketserver', 'socket', 'ssl', 'select',
+            'selectors', 'asyncio', 'asyncore', 'asynchat', 'signal',
+            'mmap', 'logging', 'getpass', 'platform', 'errno',
+            'ctypes', 'cProfile', 'profile', 'pstats', 'timeit',
+            'trace', 'tracemalloc', 'gc', 'inspect', 'dis',
+            'dataclasses', 'enum', 'graphlib', 'numbers', 'math',
+            'cmath', 'decimal', 'fractions', 'random', 'statistics',
+            'itertools', 'functools', 'operator', 'pathlib', 'fileinput',
+            'filecmp', 'tempfile', 'glob', 'fnmatch', 'shutil',
+            'tarfile', 'zipfile', 'lzma', 'bz2', 'gzip', 'zlib'
+        ])
+        
+    def start(self):
+        """Start automatic tracing by installing sys.settrace() hook."""
+        if self._active:
+            return
+        
+        self._active = True
+        # Reset per-thread accounting for a clean run.
+        self._set_depth(0)
+        if hasattr(self._thread_local, 'recorded_frames'):
+            self._thread_local.recorded_frames.clear()
+        self._previous_trace = sys.gettrace()
+        sys.settrace(self._trace_callback)
+        
+    def stop(self):
+        """Stop automatic tracing by removing sys.settrace() hook."""
+        if not self._active:
+            return
+        
+        self._active = False
+        sys.settrace(self._previous_trace)
+        self._previous_trace = None
+
+    # Convenience aliases so callers can use enable()/disable() interchangeably
+    # with start()/stop() (matches the Rust Xplainit/AutoTracer API).
+    def enable(self):
+        """Alias for start()."""
+        self.start()
+
+    def disable(self):
+        """Alias for stop()."""
+        self.stop()
+
+    def __enter__(self):
+        """Context-manager entry: start tracing and return self."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Context-manager exit: stop tracing. Do not suppress exceptions."""
+        self.stop()
+        return False
+        
+    def _get_depth(self) -> int:
+        """Get current call depth for this thread."""
+        if not hasattr(self._thread_local, 'depth'):
+            self._thread_local.depth = 0
+        return self._thread_local.depth
+    
+    def _set_depth(self, depth: int):
+        """Set current call depth for this thread."""
+        self._thread_local.depth = depth
+
+    def _recorded_frames(self) -> set:
+        """
+        Per-thread set of ids of frames whose 'call' we recorded. Used so the
+        matching 'return' is recorded if and only if the 'call' was, keeping
+        FunctionEnter/FunctionExit balanced under sampling and max_depth. The
+        frame's call is still counted toward depth regardless of whether it was
+        recorded, so depth accounting stays balanced.
+        """
+        if not hasattr(self._thread_local, 'recorded_frames'):
+            self._thread_local.recorded_frames = set()
+        return self._thread_local.recorded_frames
+        
+    def _should_trace(self, frame) -> bool:
+        """
+        Determine whether this frame is user code we care about, based purely
+        on the frame's identity (source file / module / include / exclude /
+        sampling). This deliberately does NOT consult call depth.
+
+        Depth is handled separately in ``_trace_callback`` so that the 'return'
+        event for a frame whose 'call' was counted always decrements the depth
+        exactly once. Gating this method on ``max_depth`` (as an earlier version
+        did) caused a serious bug: once depth exceeded ``max_depth`` the matching
+        'return' events were filtered out too, their depth decrement never ran,
+        and depth ratcheted upward - permanently wedging tracing off for the
+        thread. See test_depth_accounting.py for the regression.
+
+        Args:
+            frame: Python frame object
+
+        Returns:
+            True if this frame is user code that should be considered for
+            tracing, False otherwise.
+        """
+        # Get module name and source filename for this frame.
+        module_name = frame.f_globals.get('__name__', '')
+        filename = frame.f_code.co_filename
+
+        # OPTIMIZATION 1: Exclude the tracer's own source file (prevent infinite
+        # recursion). Matched by filename so user code that merely mentions
+        # "tracer" or "xplainit" in its name is not skipped.
+        if self._self_filename is not None:
+            try:
+                if os.path.realpath(filename) == self._self_filename:
+                    return False
+            except Exception:
+                pass
+
+        # Also exclude the compiled xplainit backend and its python package by
+        # module name (these frames should never be traced).
+        if module_name == 'xplainit' or module_name.startswith('xplainit.'):
+            return False
+
+        # Frames without a real source file (e.g. '<string>', '<frozen ...>',
+        # built-ins) are interpreter internals - do not trace them.
+        if not filename or filename.startswith('<'):
+            return False
+
+        # OPTIMIZATION 2: If include_modules is specified, ONLY trace those.
+        if self.include_modules is not None:
+            for pattern in self.include_modules:
+                if pattern.endswith('.*'):
+                    # Wildcard pattern (e.g., 'myapp.*')
+                    prefix = pattern[:-2]
+                    if module_name == prefix or module_name.startswith(prefix + '.'):
+                        return True
+                else:
+                    # Exact match
+                    if module_name == pattern or module_name.startswith(pattern + '.'):
+                        return True
+            # Not in include list
+            return False
+
+        # OPTIMIZATION 3: Exclude specific modules requested by the caller.
+        if module_name in self.exclude_modules:
+            return False
+
+        # OPTIMIZATION 4: Cached per-file decision (biggest win). Whether a
+        # source file is user code vs stdlib/site-packages never changes.
+        if self._cache_enabled and filename in self._file_cache:
+            cached = self._file_cache[filename]
+            if not cached:
+                return False
+            # cached True still needs to fall through to sampling below.
+        else:
+            is_user_code = not self._is_stdlib_file(filename, module_name)
+            if self._cache_enabled:
+                self._file_cache[filename] = is_user_code
+            if not is_user_code:
+                return False
+
+        # NOTE: sampling is intentionally NOT applied here. Applying a random
+        # decision in _should_trace would give different answers for the 'call'
+        # and 'return' of the same frame, unbalancing depth accounting. Sampling
+        # is applied once, per counted call frame, in _handle_call and the same
+        # decision is honored on the matching return.
+        return True
+
+    def _is_stdlib_file(self, filename: str, module_name: str) -> bool:
+        """
+        Decide whether a source file belongs to the Python standard library or
+        an installed (site-packages) package, i.e. NOT user code.
+
+        Args:
+            filename: The frame's co_filename.
+            module_name: The frame's module __name__.
+
+        Returns:
+            True if the file is stdlib/site-packages (should be excluded).
+        """
+        # __main__ is always user code (the script being run).
+        if module_name == '__main__':
+            return False
+
+        try:
+            real = os.path.realpath(filename)
+        except Exception:
+            real = filename
+
+        for location in self._stdlib_locations:
+            if real == location or real.startswith(location + os.sep):
+                return True
+
+        # Fast-path fallback: recognise well-known top-level stdlib module names
+        # even if path detection did not catch them.
+        top_level = module_name.split('.')[0] if module_name else ''
+        if top_level and top_level in self._stdlib_prefixes:
+            return True
+
+        return False
+    
+    def _trace_callback(self, frame, event: str, arg: Any):
+        """
+        Main trace callback function called by Python interpreter.
+        
+        This is the core hook that Python calls for every event.
+        
+        Args:
+            frame: Python frame object
+            event: Event type ('call', 'return', 'line', 'exception')
+            arg: Event-specific argument
+            
+        Returns:
+            Local trace function or None
+        """
+        # Skip if not active
+        if not self._active:
+            return None
+        
+        # Skip if no backend
+        if self.backend is None:
+            return None
+
+        # Frame-identity filter (file / module / self / include / exclude /
+        # sampling). This intentionally does NOT look at depth - see
+        # _should_trace. Frames that fail this filter (stdlib, the tracer
+        # itself, excluded modules) are never counted toward depth and never
+        # recorded, for either call or return events.
+        if not self._should_trace(frame):
+            return None
+
+        try:
+            # Handle different event types.
+            #
+            # DEPTH ACCOUNTING: 'call' increments depth, 'return' decrements it.
+            # We must keep these balanced so depth cannot ratchet upward and
+            # wedge tracing off. For generators/coroutines, sys.settrace emits
+            # additional 'call'/'return' pairs on each resume/suspend (yield /
+            # await); those are balanced pairs too, so the accounting stays
+            # correct across yields.
+            if event == 'call':
+                return self._handle_call(frame)
+            elif event == 'return':
+                return self._handle_return(frame, arg)
+            elif event == 'exception' and self.trace_exceptions:
+                return self._handle_exception(frame, arg)
+            elif event == 'line' and self.trace_lines:
+                return self._handle_line(frame)
+        except Exception:
+            # Never let tracing errors crash the program.
+            # In production, we'd log this.
+            pass
+
+        return None
+    
+    def _handle_call(self, frame):
+        """
+        Handle function call event.
+        
+        Args:
+            frame: Python frame object
+            
+        Returns:
+            Local trace function (self._trace_callback)
+        """
+        # Increment depth for this counted (user-code) frame. Depth is
+        # maintained unconditionally here so the matching return can always
+        # decrement it - regardless of whether we RECORD this call. This is the
+        # heart of the depth-accounting fix.
+        depth = self._get_depth() + 1
+        self._set_depth(depth)
+
+        # Decide whether to RECORD this call. Two gates, both recording-only
+        # (they never affect depth):
+        #   1. max_depth: skip recording once we are deeper than max_depth.
+        #   2. sampling: skip recording for a random fraction of calls.
+        # The decision is remembered per-frame so the matching return honors it.
+        record = self.trace_calls and depth <= self.max_depth
+        if record and self.sampling_rate < 1.0:
+            import random
+            if random.random() > self.sampling_rate:
+                record = False
+
+        if record:
+            # Remember that this frame's call was recorded, so its return is
+            # recorded too (balanced enter/exit).
+            self._recorded_frames().add(id(frame))
+
+            # Extract function information
+            func_name = frame.f_code.co_name
+            filename = frame.f_code.co_filename
+            line_number = frame.f_lineno
+
+            # Extract arguments (actual values, not just names)
+            args_dict = {}
+            try:
+                arg_names = frame.f_code.co_varnames[:frame.f_code.co_argcount]
+                for arg_name in arg_names:
+                    if arg_name in frame.f_locals:
+                        value = frame.f_locals[arg_name]
+                        args_dict[arg_name] = self._serialize_value(value)
+            except Exception:
+                pass
+
+            # Call Rust backend
+            try:
+                self.backend.on_function_enter(
+                    func_name,
+                    args_dict,
+                    filename,
+                    line_number
+                )
+            except Exception:
+                pass
+
+        # Return local trace function so we keep receiving events (return,
+        # line, exception) for this frame - even when we chose not to record
+        # the call, so we still see the matching return and keep depth balanced.
+        return self._trace_callback
+    
+    def _handle_return(self, frame, return_value):
+        """
+        Handle function return event.
+        
+        Args:
+            frame: Python frame object
+            return_value: Value being returned (or None)
+            
+        Returns:
+            None
+        """
+        # Decrement depth for this counted (user-code) frame. Done
+        # unconditionally so a counted call is always balanced by its return,
+        # even if we did not record either side (max_depth / sampling).
+        depth = self._get_depth()
+        self._set_depth(max(0, depth - 1))
+
+        # Record the exit if and only if we recorded the matching call. This
+        # keeps FunctionEnter/FunctionExit balanced under max_depth and
+        # sampling. The frame-id entry is popped so the set does not grow.
+        recorded_frames = self._recorded_frames()
+        frame_id = id(frame)
+        should_record = frame_id in recorded_frames
+        recorded_frames.discard(frame_id)
+
+        if should_record and self.trace_returns:
+            # Extract function information
+            func_name = frame.f_code.co_name
+            filename = frame.f_code.co_filename
+            line_number = frame.f_lineno
+
+            # Serialize return value (actual value, not just a name)
+            return_str = self._serialize_value(return_value)
+
+            # Call Rust backend
+            try:
+                self.backend.on_function_exit(
+                    func_name,
+                    return_str,
+                    filename,
+                    line_number
+                )
+            except Exception:
+                pass
+
+        return None
+    
+    def _handle_exception(self, frame, exc_info):
+        """
+        Handle exception event.
+        
+        Args:
+            frame: Python frame object
+            exc_info: Tuple of (exc_type, exc_value, exc_traceback)
+            
+        Returns:
+            None
+        """
+        if exc_info is None:
+            return None
+        
+        exc_type, exc_value, exc_traceback = exc_info
+        
+        # Extract exception information
+        exc_type_name = exc_type.__name__ if exc_type else 'Unknown'
+        exc_message = str(exc_value) if exc_value else ''
+        filename = frame.f_code.co_filename
+        line_number = frame.f_lineno
+        
+        # Call Rust backend
+        try:
+            self.backend.on_exception(
+                exc_type_name,
+                exc_message,
+                filename,
+                line_number
+            )
+        except Exception:
+            pass
+        
+        return None
+    
+    def _handle_line(self, frame):
+        """
+        Handle line execution event.
+        
+        WARNING: This is extremely expensive! Only use for detailed debugging.
+        
+        Args:
+            frame: Python frame object
+            
+        Returns:
+            None
+        """
+        # For now, we skip line-level tracing due to overhead
+        # In the future, we could implement this for debug verbosity
+        return None
+    
+    @staticmethod
+    def _serialize_value(value: Any) -> str:
+        """
+        Serialize a Python value to string for Rust backend.
+        
+        Args:
+            value: Any Python value
+            
+        Returns:
+            String representation
+        """
+        if value is None:
+            return "None"
+        elif isinstance(value, bool):
+            return "True" if value else "False"
+        elif isinstance(value, int):
+            return str(value)
+        elif isinstance(value, float):
+            return str(value)
+        elif isinstance(value, str):
+            # Return quoted string
+            return f"'{value}'"
+        elif isinstance(value, (list, tuple)):
+            # Limit size to prevent huge strings
+            if len(value) > 10:
+                return f"{type(value).__name__}[{len(value)} items]"
+            return str(value)
+        elif isinstance(value, dict):
+            # Limit size
+            if len(value) > 10:
+                return f"dict[{len(value)} items]"
+            return str(value)
+        else:
+            # For objects, use repr but truncate
+            try:
+                repr_str = repr(value)
+                if len(repr_str) > 100:
+                    return repr_str[:97] + "..."
+                return repr_str
+            except Exception:
+                return f"<{type(value).__name__}>"
+
+
+def enable_tracing(backend=None, **kwargs):
+    """
+    Convenience function to enable global tracing.
+    
+    Usage:
+        import xplainit
+        xplainit.enable_tracing()
+        
+        # ... code runs with automatic tracing ...
+        
+        xplainit.disable_tracing()
+    
+    Args:
+        backend: xplainit.Xplainit instance
+        **kwargs: Additional arguments passed to AutoTracer
+    """
+    global _global_tracer
+    
+    if backend is None:
+        # Create default backend if not provided
+        import xplainit
+        backend = xplainit.Xplainit()
+    
+    _global_tracer = AutoTracer(backend=backend, **kwargs)
+    _global_tracer.start()
+
+
+def disable_tracing():
+    """
+    Convenience function to disable global tracing.
+    """
+    global _global_tracer
+    
+    if _global_tracer is not None:
+        _global_tracer.stop()
+        _global_tracer = None
+
+
+# Global tracer instance
+_global_tracer: Optional[AutoTracer] = None
+
+
+# Backwards-compatible alias. The package __init__ exposes AutoTracer as
+# XplainitTracer; expose the same name here so `from python.tracer import
+# XplainitTracer` (and `from xplainit.python.tracer import XplainitTracer`)
+# resolve to the same class.
+XplainitTracer = AutoTracer
+
+
+__all__ = ['AutoTracer', 'XplainitTracer', 'enable_tracing', 'disable_tracing']
