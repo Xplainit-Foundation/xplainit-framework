@@ -314,6 +314,29 @@ impl Config {
             }
         }
 
+        // Secret redaction toggle (Task 4.1). Defaults to on; only an explicit
+        // falsey value disables it so redaction can never be turned off by
+        // accident on the load paths that serialize events out of the process.
+        if let Ok(redact) = std::env::var("XPLAINIT_REDACT_SECRETS") {
+            let lower = redact.to_lowercase();
+            config.redact_secrets = lower != "false" && redact != "0";
+        }
+
+        // Custom redaction key patterns. A comma-separated list *replaces* the
+        // default pattern set so a caller can narrow or extend which value keys
+        // are treated as secret-like. Empty entries are ignored; an all-empty
+        // value leaves the defaults in place rather than disabling redaction.
+        if let Ok(patterns) = std::env::var("XPLAINIT_REDACT_KEY_PATTERNS") {
+            let parsed: Vec<String> = patterns
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !parsed.is_empty() {
+                config.redact_key_patterns = parsed;
+            }
+        }
+
         config
     }
 }
@@ -363,5 +386,46 @@ mod tests {
                 "default redaction patterns missing '{expected}'"
             );
         }
+    }
+
+    #[test]
+    fn test_from_env_parses_custom_redact_key_patterns() {
+        // Env vars are process-global; set, read, and immediately restore so
+        // this test does not pollute others (which is why it does its own
+        // save/restore rather than relying on external isolation).
+        let key = "XPLAINIT_REDACT_KEY_PATTERNS";
+        let prev = std::env::var(key).ok();
+        std::env::set_var(key, "cookie, ssn");
+        let config = Config::from_env();
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+
+        // Custom list replaces the defaults, so the env-provided patterns are
+        // present and the built-in "password" default is gone. Fails if
+        // from_env does not parse XPLAINIT_REDACT_KEY_PATTERNS.
+        assert!(config.redact_key_patterns.iter().any(|p| p == "cookie"));
+        assert!(config.redact_key_patterns.iter().any(|p| p == "ssn"));
+        assert!(
+            !config.redact_key_patterns.iter().any(|p| p == "password"),
+            "custom patterns should replace defaults"
+        );
+    }
+
+    #[test]
+    fn test_from_env_parses_redact_secrets_toggle() {
+        let key = "XPLAINIT_REDACT_SECRETS";
+        let prev = std::env::var(key).ok();
+        std::env::set_var(key, "false");
+        let config = Config::from_env();
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+        assert!(
+            !config.redact_secrets,
+            "XPLAINIT_REDACT_SECRETS=false should disable redaction"
+        );
     }
 }

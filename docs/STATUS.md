@@ -34,7 +34,12 @@ The following all pass on the current branch:
   payloads; input-path validation.
 - **Phase 4 error recovery:** circuit-breaker + telemetry in `RuntimeControl`
   (`max_consecutive_errors`, `total_errors`, `total_panics`, `times_tripped`,
-  `debug_mode`).
+  `debug_mode`). The breaker is driven end-to-end by `EventPipeline`: attach a
+  control with `EventPipeline::with_control(control)` and every `handle_event`
+  routes processor/sink failures through `record_error` (tripping the breaker
+  after N consecutive errors) and clean events through `record_success`. See
+  the "circuit-breaker integration point" note under limitations for how this
+  is wired.
 - **Phase 4 performance:** hot-path clone/allocation reductions (see
   [PERFORMANCE.md](PERFORMANCE.md)).
 - **Phase 4 testing:** extensive unit/integration/property-style/load tests
@@ -82,6 +87,19 @@ The following all pass on the current branch:
   out-of-band. See [reference/async.md](reference/async.md).
 - Non-Python bindings expose control/recording APIs, not full automatic source
   tracers for arbitrary programs.
+- **Circuit-breaker integration point.** The breaker's driver lives in
+  `EventPipeline`: a `RuntimeControl` attached with
+  `EventPipeline::with_control(control)` makes `handle_event` record every
+  processor/sink success and failure, so consecutive real framework errors trip
+  the breaker and auto-disable tracing (covered end-to-end by
+  `pipeline::tests::test_pipeline_control_trips_breaker_after_consecutive_errors`
+  and `..._success_resets_consecutive_counter`). The framework does **not**
+  construct a global pipeline for you and therefore does not auto-attach a
+  control; each embedder (a binding, the CLI capture path, or an application)
+  builds its `EventPipeline` and opts in via `with_control`. Until an embedder
+  does so, `record_error`/`record_success` are not invoked for that pipeline
+  and the breaker stays idle for it. This is a deliberate wiring point, not
+  active-by-default behavior.
 
 ## Blocked by the offline (`INTEGRATIONS_ONLY`) sandbox
 

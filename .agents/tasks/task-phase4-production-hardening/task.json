@@ -1,7 +1,25 @@
 {
   "task_id": "task-phase4-production-hardening",
   "task_description": "Phase 4 PRODUCTION HARDENING (v0.4.0) for the xplainit-framework: (4.1) security hardening - input sanitization, unsafe/FFI audit, secret redaction, dependency audit; (4.2) error recovery - graceful degradation, circuit breaker, error isolation, telemetry; (4.3) performance optimization - reduce cloning/allocations, Arc/zero-copy, offline bench harness; (4.4) extensive testing - unit/edge/hand-rolled property/integration/load tests; (4.5) documentation completion - warning-free cargo doc, Markdown user guide, reference docs, status corrections. Executed one task at a time in order on branch phase4-production-hardening, committed per-feature. Offline INTEGRATIONS_ONLY sandbox: cargo audit/tarpaulin/fuzz/mdbook/vet/outdated/flamegraph are unavailable and their intent is implemented by available means with honest documentation of what is blocked. No PRs; orchestrator fast-forward-merges into master.",
-  "status": "in_progress",
+  "status": "completed",
   "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
-  "blocked_reason": null
+  "blocked_reason": null,
+  "branch": "phase4-production-hardening",
+  "head_commit": "a554d26",
+  "working_tree": "review-fix committed on phase4-production-hardening (v1 NEEDS_CHANGES addressed)",
+  "review_fix_v1": {
+    "review_file": "2026-09-21-062749-review.md",
+    "issue_1_circuit_breaker": "fixed-in-code + documented: EventPipeline.with_control wiring kept (xplainit-core/src/pipeline.rs) and now driven end-to-end by two revert-sensitive tests (test_pipeline_control_trips_breaker_after_consecutive_errors, test_pipeline_control_success_resets_consecutive_counter). docs/STATUS.md documents with_control as the integration point (runtime does not auto-construct/auto-attach a pipeline).",
+    "issue_2_message_secrets": "fixed-in-code: security::redact_message scrubs key=value/key:value in free-form message strings; wired into ExecutionEvent::redacted for Exception/RuntimeError/SyntaxError/Panic (xplainit-core/src/events.rs). Tests: security redact_message_* + events test_redacts_secret_in_exception_message / _runtime_error_message. Residual bare-token limitation documented in docs/SECURITY_AUDIT.md.",
+    "issue_3_load_path_config": "fixed-in-code: CLI (xplainit-cli/src/commands/mod.rs) and dashboard (xplainit-dashboard/src/trace.rs) load_events now use Config::from_env plus a load_events_with_config injection point; both have honors_custom_redact_key_patterns_on_load tests.",
+    "issue_4_from_env_patterns": "fixed-in-code (same root cause as #3): Config::from_env now parses XPLAINIT_REDACT_SECRETS and XPLAINIT_REDACT_KEY_PATTERNS (xplainit-core/src/config.rs); tests test_from_env_parses_custom_redact_key_patterns / _redact_secrets_toggle.",
+    "gates": "cargo build --release OK; cargo test 254 passed/0 failed/1 ignored; clippy -D warnings clean; cargo fmt --check clean; cargo doc --all --no-deps warning-free; Python suites all pass. New tests confirmed revert-sensitive."
+  },
+  "verification": {
+    "build": "pass",
+    "tests": "pass",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "cargo build --release OK. cargo test: 242 passed, 0 failed, 1 ignored across all suites (core 123, edge_case 22, property 13, integration 13, load 3+1 ignored, cli 6, perf_regression 5, dashboard 27, c 11, java 6, node 1, python 6, main 6, doc 1). Ignored 1M-event soak test passes (cargo test -p xplainit-core --test load_tests -- --ignored: 1 passed). cargo clippy --all-targets --all-features -- -D warnings: clean. cargo fmt --all -- --check: clean. cargo doc --all --no-deps: zero warnings. Python suites: test_automatic_tracing 3/3, test_frame_filter 11/11, test_depth_accounting 23/23, test_decorators pass. Test quality: spot-checked control.rs circuit-breaker/telemetry tests, perf_regression golden JSON tests, and redaction tests (unit + hand-rolled property); all assert real behavior and are revert-sensitive. FEAT-004's property test caught and the coder fixed a real redaction leak in nested single-value payload fields. No Docker in repo/offline; docker build not applicable. Offline-blocked tooling (cargo audit, cargo-tarpaulin, cargo-fuzz, mdbook, cargo-flamegraph) intent implemented by available means and documented honestly in docs/."
+  }
 }

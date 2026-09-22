@@ -42,6 +42,28 @@ environment. The section below lists exactly what to run when online.
 - **Secret/PII redaction.** Captured runtime values whose key matches a
   secret-like pattern are redacted before leaving the process
   (`xplainit_core::redact_events`, config `redact_secrets` / `redact_key_patterns`).
+  Redaction is primarily *key-based* (it keys off the name of an argument,
+  variable or context entry), and it also recurses into nested object/array
+  values so a secret nested inside a return value, resumed value or loop
+  variable is scrubbed too.
+- **Error/exception message scrubbing.** Free-form `message` strings on
+  `Exception`, `RuntimeError`, `SyntaxError` and `Panic` carry no per-value key,
+  so key-based redaction cannot reach a secret pasted inline (for example
+  `"auth failed: token=sk-..."` or a connection string with an embedded
+  password). These messages are additionally scanned with
+  `xplainit_core::security::redact_message`, which finds a redaction pattern
+  immediately followed by a `=`/`:` (optionally `=>`) assignment and replaces
+  the value token with the placeholder, leaving the surrounding prose intact.
+  Limitation: this scrubs `key=value` / `key: value` assignments; a secret that
+  appears in a message with no adjacent key (a bare token in free prose) is not
+  detectable by name and is not redacted.
+- **Configured redaction policy on load paths.** The CLI and dashboard
+  `load_events` load their redaction policy from the environment via
+  `Config::from_env` (respecting `XPLAINIT_REDACT_SECRETS` and a comma-separated
+  `XPLAINIT_REDACT_KEY_PATTERNS`), so customized patterns and `XPLAINIT_*`
+  settings actually take effect where events leave the process instead of a
+  hardcoded default. Both also expose `load_events_with_config` for callers that
+  thread an explicit `Config`.
 
 ## 3. Direct workspace dependencies (from `Cargo.toml`)
 

@@ -558,12 +558,40 @@ impl ExecutionEvent {
                     }
                 }
             }
-            ExecutionEvent::RuntimeError { context, .. } => redact_named_map(context, patterns),
-            ExecutionEvent::Exception { stack_trace, .. }
-            | ExecutionEvent::Panic { stack_trace, .. } => {
+            ExecutionEvent::RuntimeError {
+                context,
+                message,
+                stack_trace,
+                ..
+            } => {
+                redact_named_map(context, patterns);
+                *message = crate::security::redact_message(message, patterns);
                 for frame in stack_trace.iter_mut() {
                     redact_named_map(&mut frame.arguments, patterns);
                 }
+            }
+            // Free-form `message` strings are a realistic place for secrets to
+            // land inline (for example `token=sk-...` or a connection string
+            // with an embedded password); key-based redaction cannot reach them
+            // because they carry no per-value key, so they are scrubbed against
+            // the same patterns via `redact_message`.
+            ExecutionEvent::Exception {
+                stack_trace,
+                message,
+                ..
+            }
+            | ExecutionEvent::Panic {
+                stack_trace,
+                message,
+                ..
+            } => {
+                *message = crate::security::redact_message(message, patterns);
+                for frame in stack_trace.iter_mut() {
+                    redact_named_map(&mut frame.arguments, patterns);
+                }
+            }
+            ExecutionEvent::SyntaxError { message, .. } => {
+                *message = crate::security::redact_message(message, patterns);
             }
             // Single-value payload fields carry no key of their own, so they
             // are not blanket-redacted; but if the value is (or contains) an
@@ -773,6 +801,57 @@ mod tests {
             !json.contains("sk-secret"),
             "loop var secret leaked: {json}"
         );
+    }
+
+    #[test]
+    fn test_redacts_secret_in_exception_message() {
+        // A secret embedded in a free-form Exception message must be scrubbed.
+        // Fails if the message-string redaction arm is reverted (key-based
+        // redaction alone cannot reach a free-form message).
+        let patterns: Vec<String> = crate::security::DEFAULT_REDACTION_PATTERNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let event = ExecutionEvent::Exception {
+            id: Uuid::new_v4(),
+            error_type: "AuthError".to_string(),
+            message: "auth failed: token=sk-live-abc123 for user".to_string(),
+            location: SourceLocation::unknown(),
+            stack_trace: Vec::new(),
+            caught: false,
+            timestamp: Utc::now(),
+        };
+        let json = serde_json::to_string(&event.redacted(&patterns)).unwrap();
+        assert!(
+            !json.contains("sk-live-abc123"),
+            "secret in exception message leaked: {json}"
+        );
+        assert!(json.contains("auth failed"), "prose lost: {json}");
+        assert!(json.contains(crate::security::REDACTED_PLACEHOLDER));
+    }
+
+    #[test]
+    fn test_redacts_secret_in_runtime_error_message() {
+        // Same guard for RuntimeError.message.
+        let patterns: Vec<String> = crate::security::DEFAULT_REDACTION_PATTERNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let event = ExecutionEvent::RuntimeError {
+            id: Uuid::new_v4(),
+            error_type: "ConnError".to_string(),
+            message: "cannot connect: password=hunter2 host=db".to_string(),
+            location: SourceLocation::unknown(),
+            context: HashMap::new(),
+            stack_trace: Vec::new(),
+            timestamp: Utc::now(),
+        };
+        let json = serde_json::to_string(&event.redacted(&patterns)).unwrap();
+        assert!(
+            !json.contains("hunter2"),
+            "secret in runtime error message leaked: {json}"
+        );
+        assert!(json.contains("cannot connect"), "prose lost: {json}");
     }
 
     #[test]

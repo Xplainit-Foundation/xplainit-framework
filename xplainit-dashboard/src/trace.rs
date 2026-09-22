@@ -15,9 +15,19 @@ use xplainit_core::{redact_events, validate_input_path, Config, ExecutionEvent};
 /// found, unreadable, malformed JSON).
 ///
 /// The user-supplied `path` is validated with [`validate_input_path`] before
-/// being opened, and secret-like named values are redacted (default [`Config`]
-/// policy) so they are never served in dashboard payloads.
+/// being opened, and secret-like named values are redacted using the
+/// environment [`Config`] policy ([`Config::from_env`]) so `XPLAINIT_*`
+/// settings and any customized `redact_key_patterns` take effect on this load
+/// path, and secrets are never served in dashboard payloads.
 pub fn load_events(path: &str) -> Result<Vec<ExecutionEvent>> {
+    load_events_with_config(path, &Config::from_env())
+}
+
+/// Load events using an explicit [`Config`] policy.
+///
+/// Kept separate so the redaction policy can be injected in tests without
+/// depending on process-wide environment variables.
+pub fn load_events_with_config(path: &str, config: &Config) -> Result<Vec<ExecutionEvent>> {
     let p = Path::new(path);
     validate_input_path(p).with_context(|| format!("invalid trace path: {path}"))?;
 
@@ -27,7 +37,6 @@ pub fn load_events(path: &str) -> Result<Vec<ExecutionEvent>> {
     let events = parse_events(&contents)
         .with_context(|| format!("failed to parse trace events from: {path}"))?;
 
-    let config = Config::default();
     if config.redact_secrets {
         Ok(redact_events(&events, &config.redact_key_patterns))
     } else {
@@ -88,5 +97,47 @@ mod tests {
     #[test]
     fn rejects_malformed_json() {
         assert!(parse_events("not json").is_err());
+    }
+
+    const CUSTOM_SECRET_EVENT: &str = r#"[{
+        "FunctionEnter": {
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "name": "login",
+            "args": {"session_cookie": {"String": "abc123secret"}},
+            "location": {"file": "app.py", "line": 1, "column": 1, "offset": 0},
+            "timestamp": "2024-01-01T00:00:00Z"
+        }
+    }]"#;
+
+    #[test]
+    fn honors_custom_redact_key_patterns_on_load() {
+        // Guards against the regression where load_events bound a hardcoded
+        // Config::default() and dropped configured redaction patterns. An
+        // explicit config (not env) is used to avoid test env pollution.
+        let mut path = std::env::temp_dir();
+        path.push(format!("xplainit-dash-load-{}.json", std::process::id()));
+        std::fs::write(&path, CUSTOM_SECRET_EVENT).expect("write temp trace");
+
+        // Default patterns: "session_cookie" survives.
+        let default_cfg = Config::default();
+        let events = load_events_with_config(path.to_str().unwrap(), &default_cfg).unwrap();
+        let json = serde_json::to_string(&events).unwrap();
+        assert!(
+            json.contains("abc123secret"),
+            "value should be present under default patterns: {json}"
+        );
+
+        // Custom pattern "cookie" must redact it on the load path.
+        let custom_cfg = Config {
+            redact_key_patterns: vec!["cookie".to_string()],
+            ..Config::default()
+        };
+        let events = load_events_with_config(path.to_str().unwrap(), &custom_cfg).unwrap();
+        let json = serde_json::to_string(&events).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            !json.contains("abc123secret"),
+            "custom pattern was not honored on dashboard load: {json}"
+        );
     }
 }

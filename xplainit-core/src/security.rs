@@ -105,6 +105,104 @@ pub fn redact_named_value(key: &str, value: &Value, patterns: &[String]) -> Valu
     }
 }
 
+/// Scrub secret-like `key=value` / `key: value` occurrences out of a free-form
+/// message string.
+///
+/// Key-based redaction only reaches values that carry a *name* (arguments,
+/// variables, context maps). Error/exception `message` strings are free-form
+/// and are a realistic place for a secret to land inline, for example
+/// `"auth failed: token=sk-abc123"` or a connection string with an embedded
+/// password. This helper scans the message for a redaction pattern immediately
+/// followed by a `=`, `:` or `=>` assignment and replaces the *value* token
+/// (everything up to the next whitespace, quote, comma or semicolon) with the
+/// redacted placeholder, leaving the surrounding prose and the key itself
+/// intact so the message stays useful.
+///
+/// The scan is case-insensitive on the key and never widens the match beyond a
+/// single value token, so ordinary prose that merely mentions the word
+/// "password" without an assignment is left untouched.
+pub fn redact_message(message: &str, patterns: &[String]) -> String {
+    if message.is_empty() {
+        return message.to_string();
+    }
+
+    let lower = message.to_lowercase();
+    // Collect (value_start, value_end) byte ranges to redact, scanning left to
+    // right so ranges never overlap.
+    let mut redactions: Vec<(usize, usize)> = Vec::new();
+    let bytes = message.as_bytes();
+    let mut search_from = 0usize;
+
+    for pattern in patterns {
+        let p = pattern.to_lowercase();
+        if p.is_empty() {
+            continue;
+        }
+        let mut from = 0usize;
+        while let Some(rel) = lower[from..].find(&p) {
+            let key_start = from + rel;
+            let key_end = key_start + p.len();
+            from = key_end;
+
+            // Skip whitespace between the key and a separator.
+            let mut i = key_end;
+            while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+                i += 1;
+            }
+            // Require an assignment separator (`=`, `:`) directly after the key
+            // (optionally `=>`), otherwise this is prose, not an assignment.
+            if i >= bytes.len() || (bytes[i] != b'=' && bytes[i] != b':') {
+                continue;
+            }
+            i += 1;
+            if i < bytes.len() && bytes[i] == b'>' {
+                i += 1; // `=>`
+            }
+            // Skip whitespace and an optional opening quote before the value.
+            while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+                i += 1;
+            }
+            if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+                i += 1;
+            }
+            let value_start = i;
+            // The value token runs until the next delimiter.
+            while i < bytes.len()
+                && !matches!(
+                    bytes[i],
+                    b' ' | b'\t' | b'\n' | b'\r' | b',' | b';' | b'"' | b'\''
+                )
+            {
+                i += 1;
+            }
+            let value_end = i;
+            if value_end > value_start && value_start >= search_from {
+                redactions.push((value_start, value_end));
+                search_from = value_end;
+            }
+        }
+    }
+
+    if redactions.is_empty() {
+        return message.to_string();
+    }
+
+    // Apply non-overlapping redactions left to right.
+    redactions.sort_by_key(|r| r.0);
+    let mut out = String::with_capacity(message.len());
+    let mut cursor = 0usize;
+    for (start, end) in redactions {
+        if start < cursor {
+            continue; // overlap guard
+        }
+        out.push_str(&message[cursor..start]);
+        out.push_str(REDACTED_PLACEHOLDER);
+        cursor = end;
+    }
+    out.push_str(&message[cursor..]);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +292,42 @@ mod tests {
 
         let normal = redact_named_value("count", &Value::Integer(7), &patterns);
         assert_eq!(normal, Value::Integer(7));
+    }
+
+    #[test]
+    fn redact_message_scrubs_inline_secret_assignment() {
+        let patterns = default_patterns();
+        // token=... in an error message must be scrubbed, prose kept.
+        let msg = "auth failed: token=sk-abc123 while calling api";
+        let out = redact_message(msg, &patterns);
+        assert!(!out.contains("sk-abc123"), "secret value leaked: {out}");
+        assert!(out.contains("auth failed"));
+        assert!(out.contains("while calling api"));
+        assert!(out.contains(REDACTED_PLACEHOLDER));
+    }
+
+    #[test]
+    fn redact_message_handles_colon_and_quotes() {
+        let patterns = default_patterns();
+        let msg = r#"connection refused: password: "s3cr3t!", retrying"#;
+        let out = redact_message(msg, &patterns);
+        assert!(!out.contains("s3cr3t!"), "secret leaked: {out}");
+        assert!(out.contains("connection refused"));
+        assert!(out.contains("retrying"));
+    }
+
+    #[test]
+    fn redact_message_leaves_plain_prose_untouched() {
+        let patterns = default_patterns();
+        // "password" mentioned without an assignment is prose, not a secret.
+        let msg = "the password policy was violated";
+        let out = redact_message(msg, &patterns);
+        assert_eq!(out, msg);
+    }
+
+    #[test]
+    fn redact_message_empty_is_noop() {
+        let patterns = default_patterns();
+        assert_eq!(redact_message("", &patterns), "");
     }
 }
