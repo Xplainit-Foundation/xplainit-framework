@@ -249,8 +249,8 @@ xplainit-core = { path = "c:/Users/siter/Desktop/Xplainit Framework/xplainit-cor
 
 ### Plans
 - [PRODUCTION_READINESS_PLAN.md](PRODUCTION_READINESS_PLAN.md) - Full roadmap
-- [DEMO_CURRENT_FUNCTIONALITY.md](DEMO_CURRENT_FUNCTIONALITY.md) - What works
-- [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md) - Overview
+- [FRAMEWORK_PLAN.md](FRAMEWORK_PLAN.md) - Framework plan
+- [README.md](README.md) - Honest overview of what works
 
 ---
 

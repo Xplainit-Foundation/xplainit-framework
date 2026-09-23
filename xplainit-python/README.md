@@ -13,17 +13,15 @@ Python bindings for the Xplainit Framework - Understand what your code is doing 
 
 ## Installation
 
-```bash
-pip install xplainit
-```
-
-Or from source:
+There is no published package; `pip install xplainit` does not work. Build from
+source with [maturin](https://www.maturin.rs/):
 
 ```bash
-git clone https://github.com/xplainit/xplainit.git
-cd xplainit/xplainit-python
+python -m venv .venv
+source .venv/bin/activate
 pip install maturin
-maturin develop
+cd xplainit-python
+maturin develop --release
 ```
 
 ## Quick Start
@@ -105,6 +103,9 @@ xplainit.disable()
 
 ### Custom Configuration
 
+The `Xplainit` object is the recording backend. It has `enable()`/`disable()`,
+not `start()`/`stop()` (those live on `AutoTracer`).
+
 ```python
 import xplainit
 
@@ -114,11 +115,22 @@ explainer = xplainit.Xplainit(
     output="stdout"        # stdout, stderr, or file path
 )
 
-explainer.start()
+explainer.enable()
 
-# Your code here
+# ... run code / feed events ...
 
-explainer.stop()
+print(explainer.get_stats())   # returns a string, e.g. "Events captured: N, Enabled: true"
+explainer.disable()
+```
+
+For real automatic tracing, use `AutoTracer` (it installs `sys.settrace`):
+
+```python
+tracer = xplainit.AutoTracer()
+tracer.start()
+# ... code to trace ...
+tracer.stop()
+events = tracer.get_events()   # a Python list
 ```
 
 ### Verbosity Levels
@@ -168,16 +180,18 @@ See the `examples/` directory for complete working examples:
 Main tracing class.
 
 **Methods:**
-- `start()` - Start tracing (installs sys.settrace)
-- `stop()` - Stop tracing
 - `enable()` - Enable tracing
 - `disable()` - Disable tracing
 - `is_enabled()` - Check enabled status
-- `get_events()` - Get captured events as JSON
+- `get_events()` - Get captured events as a JSON **string**
 - `get_last_explanation()` - Get last explanation
 - `clear()` - Clear all captured events
 - `set_verbosity(level)` - Change verbosity level
-- `get_stats()` - Get tracing statistics
+- `get_stats()` - Get tracing statistics as a **string**
+
+(For `sys.settrace`-based automatic tracing use the `AutoTracer` class, whose
+`start()`/`stop()` install and remove the trace hook and whose `get_events()`
+returns a list.)
 
 #### `XplainitContext(enabled=True, verbosity="normal")`
 
@@ -204,9 +218,15 @@ def my_function():
 
 ## Performance
 
-- **Enabled**: ~5-15% overhead depending on verbosity and event frequency
-- **Disabled**: Zero overhead (atomic boolean check, optimized out by compiler)
-- **Selective tracing**: Only decorated functions incur overhead
+Be realistic here:
+
+- **Full automatic tracing** (`sys.settrace`, i.e. `AutoTracer`): very heavy.
+  Measured ~1100x slowdown on a recursive `fib` benchmark. This is inherent to
+  `sys.settrace` (a Python callback per frame event) and is the same order of
+  magnitude as tools like PySnooper. Only trace small, targeted regions.
+- **Selective tracing** (decorators / manual): only the code you explicitly wrap
+  is affected, so overhead is proportional to how much you trace.
+- **Disabled**: effectively zero (an atomic boolean check).
 
 ## Python Version Support
 
@@ -225,12 +245,8 @@ Contributions welcome! See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
 
 ## License
 
-Licensed under either of:
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](../LICENSE-APACHE))
-- MIT License ([LICENSE-MIT](../LICENSE-MIT))
-
-at your option.
+MIT License ([LICENSE-MIT](../LICENSE-MIT)). There is no Apache license file in
+this repository, so treat it as MIT only.
 
 ## Links
 

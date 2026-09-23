@@ -359,11 +359,9 @@ cargo test -p xplainit-python
 
 # Python tests
 python test_decorators.py
-python test_explanations_final.py
-
-# Advanced demos
-python demo_advanced.py
-python demo_debugging.py
+python test_public_api.py
+python test_frame_filter.py
+python test_depth_accounting.py
 ```
 
 ## Architecture
@@ -403,7 +401,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](../CONTRIBUTING.md) for g
 
 ## License
 
-Licensed under either of Apache License, Version 2.0 or MIT license at your option.
+MIT License (see [LICENSE-MIT](../LICENSE-MIT)). There is no Apache license file
+in this repository, so treat it as MIT only.
 
 ## Links
 
